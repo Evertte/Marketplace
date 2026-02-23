@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --background: 44 44% 97%;
+    --foreground: 222 25% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 25% 12%;
+    --primary: 205 88% 35%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 37 47% 93%;
+    --secondary-foreground: 222 25% 12%;
+    --muted: 40 36% 93%;
+    --muted-foreground: 215 12% 40%;
+    --accent: 188 34% 91%;
+    --accent-foreground: 222 25% 12%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 36 24% 84%;
+    --input: 36 24% 84%;
+    --ring: 205 88% 35%;
+    --radius: 0.75rem;
+
+    --bg: #f4f2ea;
+    --fg: #171717;
+    --muted-legacy: #5c5a52;
+    --panel: #fffdf6;
+    --border-legacy: #d7d0bf;
+  }
+
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    background: radial-gradient(circle at top, #fbf8ee, var(--bg));
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif;
+  }
+}
+
+code,
+pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+}
+
+.shell {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+}
+
+.panel {
+  width: min(860px, 100%);
+  background: color-mix(in srgb, var(--panel) 92%, white);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 1.5rem;
+  box-shadow: 0 12px 30px rgba(26, 23, 14, 0.08);
+}
+
+.panel h1 {
+  margin: 0.25rem 0 0.75rem;
+  font-size: clamp(1.6rem, 2vw + 1rem, 2.4rem);
+}
+
+.panel p {
+  margin: 0 0 0.9rem;
+  line-height: 1.5;
+}
+
+.eyebrow {
+  color: var(--muted-legacy);
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.panel pre {
+  overflow-x: auto;
+  margin: 0;
+  padding: 0.9rem 1rem;
+  background: #f2eddd;
+  border-radius: 12px;
+  border: 1px solid var(--border-legacy);
+}

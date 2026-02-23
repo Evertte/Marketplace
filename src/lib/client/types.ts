@@ -1,0 +1,131 @@
+export type ListingType = "car" | "building" | "land";
+export type ListingCard = {
+  id: string;
+  type: ListingType;
+  title: string;
+  price: string;
+  currency: string;
+  locationCountry: string;
+  locationRegion: string;
+  locationCity: string;
+  publishedAt: string | null;
+  createdAt: string;
+  coverImageUrl: string | null;
+};
+
+export type HomeResponse = {
+  data: {
+    cars: { items: ListingCard[]; next_cursor: null };
+    buildings: { items: ListingCard[]; next_cursor: null };
+    lands: { items: ListingCard[]; next_cursor: null };
+  };
+};
+
+export type ListingsResponse = {
+  data: ListingCard[];
+  page: {
+    limit: number;
+    next_cursor: string | null;
+    has_more: boolean;
+  };
+};
+
+export type PublicListingDetailResponse = {
+  data: {
+    id: string;
+    type: ListingType;
+    title: string;
+    description: string;
+    price: string;
+    currency: string;
+    locationCountry: string;
+    locationRegion: string;
+    locationCity: string;
+    lat: string | null;
+    lng: string | null;
+    publishedAt: string | null;
+    createdAt: string;
+    updatedAt: string;
+    typeFields: unknown;
+    media: Array<{
+      mediaId: string;
+      url: string;
+      thumbUrl: string | null;
+      kind: "image" | "video";
+      sortOrder: number;
+    }>;
+  };
+};
+
+export type CreateInquiryResponse = {
+  data: {
+    inquiry_id: string;
+    conversation_id: string;
+    listing_id: string;
+    created: boolean;
+  };
+};
+
+export type ConversationsResponse = {
+  data: Array<{
+    conversation: {
+      id: string;
+      listingId: string;
+      buyerUserId: string;
+      sellerUserId: string;
+      lastMessageAt: string | null;
+      createdAt: string;
+      updatedAt: string;
+    };
+    listing: {
+      id: string;
+      type: ListingType;
+      title: string;
+      price: string;
+      currency: string;
+      locationCountry: string;
+      locationRegion: string;
+      locationCity: string;
+      coverImageUrl: string | null;
+    };
+    buyer: {
+      id: string;
+      email: string;
+    };
+  }>;
+  page: {
+    limit: number;
+    next_cursor: string | null;
+    has_more: boolean;
+  };
+};
+
+export type ConversationMessagesResponse = {
+  data: Array<{
+    id: string;
+    conversationId: string;
+    senderUserId: string;
+    kind: "text" | "media";
+    text: string | null;
+    media: null | {
+      id: string;
+      url: string;
+      thumbUrl: string | null;
+      kind: "image" | "video";
+    };
+    createdAt: string;
+  }>;
+  page: {
+    limit: number;
+    next_cursor: string | null;
+    has_more: boolean;
+  };
+};
+
+export type SendMessageResponse = {
+  data: {
+    message_id: string;
+    createdAt: string;
+  };
+};
+

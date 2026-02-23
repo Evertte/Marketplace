@@ -1,0 +1,184 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  admin
+  user
+}
+
+enum UserStatus {
+  active
+  banned
+}
+
+enum ListingType {
+  car
+  building
+  land
+}
+
+enum ListingStatus {
+  draft
+  published
+  archived
+}
+
+enum MediaPurpose {
+  listing
+  chat
+}
+
+enum MediaKind {
+  image
+  video
+}
+
+enum MediaStatus {
+  uploading
+  ready
+  failed
+}
+
+enum PreferredContact {
+  chat
+  whatsapp
+  call
+}
+
+enum MessageKind {
+  text
+  media
+}
+
+model User {
+  id              String          @id @default(uuid()) @db.Uuid
+  authUserId      String          @unique @db.Uuid
+  email           String          @unique
+  role            UserRole
+  status          UserStatus
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  listings        Listing[]
+  media           Media[]
+  inquiries       Inquiry[]
+  buyerChats      Conversation[]  @relation("ConversationBuyer")
+  sellerChats     Conversation[]  @relation("ConversationSeller")
+  sentMessages    Message[]
+  auditLogEntries AdminAuditLog[]
+}
+
+model Listing {
+  id              String         @id @default(uuid()) @db.Uuid
+  type            ListingType
+  title           String
+  description     String
+  price           Decimal        @db.Decimal(18, 2)
+  currency        String
+  locationCountry String
+  locationRegion  String
+  locationCity    String
+  lat             Decimal?       @db.Decimal(9, 6)
+  lng             Decimal?       @db.Decimal(9, 6)
+  status          ListingStatus
+  publishedAt     DateTime?
+  createdById     String         @db.Uuid
+  typeFields      Json?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  createdBy       User           @relation(fields: [createdById], references: [id])
+  listingMedia    ListingMedia[]
+  inquiries       Inquiry[]
+  conversations   Conversation[]
+
+  @@index([type, status, publishedAt(sort: Desc)])
+  @@index([price])
+  @@index([locationRegion, locationCity])
+}
+
+model Media {
+  id            String         @id @default(uuid()) @db.Uuid
+  ownerUserId   String         @db.Uuid
+  purpose       MediaPurpose
+  kind          MediaKind
+  url           String
+  thumbUrl      String?
+  mime          String
+  sizeBytes     BigInt
+  durationSec   Int?
+  status        MediaStatus
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  ownerUser     User           @relation(fields: [ownerUserId], references: [id])
+  listingLinks  ListingMedia[]
+  messageUsages Message[]
+}
+
+model ListingMedia {
+  listingId String   @db.Uuid
+  mediaId   String   @db.Uuid
+  sortOrder Int
+  createdAt DateTime @default(now())
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  media     Media    @relation(fields: [mediaId], references: [id], onDelete: NoAction)
+
+  @@id([listingId, mediaId])
+}
+
+model Inquiry {
+  id               String           @id @default(uuid()) @db.Uuid
+  listingId        String           @db.Uuid
+  buyerUserId      String           @db.Uuid
+  message          String
+  preferredContact PreferredContact
+  phone            String?
+  createdAt        DateTime         @default(now())
+  listing          Listing          @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  buyerUser        User             @relation(fields: [buyerUserId], references: [id])
+}
+
+model Conversation {
+  id            String    @id @default(uuid()) @db.Uuid
+  listingId     String    @db.Uuid
+  buyerUserId   String    @db.Uuid
+  sellerUserId  String    @db.Uuid
+  lastMessageAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  listing       Listing   @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  buyerUser     User      @relation("ConversationBuyer", fields: [buyerUserId], references: [id])
+  sellerUser    User      @relation("ConversationSeller", fields: [sellerUserId], references: [id])
+  messages      Message[]
+
+  @@unique([buyerUserId, listingId])
+}
+
+model Message {
+  id             String       @id @default(uuid()) @db.Uuid
+  conversationId String       @db.Uuid
+  senderUserId   String       @db.Uuid
+  kind           MessageKind
+  text           String?
+  mediaId        String?      @db.Uuid
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderUser     User         @relation(fields: [senderUserId], references: [id])
+  media          Media?       @relation(fields: [mediaId], references: [id], onDelete: NoAction)
+
+  @@index([conversationId, createdAt(sort: Desc)])
+}
+
+model AdminAuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  actorUserId String   @db.Uuid
+  action      String
+  entityType  String
+  entityId    String
+  metadata    Json
+  createdAt   DateTime @default(now())
+  actorUser   User     @relation(fields: [actorUserId], references: [id])
+}
