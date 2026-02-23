@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, LogIn } from "lucide-react";
+import { Loader2, LogIn, UserPlus } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -18,7 +18,7 @@ import { getSupabaseBrowser } from "@/src/lib/supabase/browser";
 
 const loginSchema = z.object({
   email: z.string().trim().email("Enter a valid email"),
-  password: z.string().min(1, "Password is required"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
 });
 
 type LoginValues = z.infer<typeof loginSchema>;
@@ -28,6 +28,8 @@ export default function LoginClientPage() {
   const searchParams = useSearchParams();
   const { session, sessionLoading } = useUserAuth();
   const [submitting, setSubmitting] = useState(false);
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [signupMessage, setSignupMessage] = useState<string | null>(null);
 
   const nextPath = useMemo(() => {
     const next = searchParams.get("next");
@@ -49,22 +51,33 @@ export default function LoginClientPage() {
     }
   }, [nextPath, router, session, sessionLoading]);
 
+  const isSignup = mode === "signup";
+
   return (
     <PublicShell
-      title="Sign in"
-      subtitle="Use your Supabase email and password to message sellers and manage your conversations."
+      title={isSignup ? "Create account" : "Sign in"}
+      subtitle={
+        isSignup
+          ? "Create a Supabase account to message sellers and keep your conversations in one place."
+          : "Use your Supabase email and password to message sellers and manage your conversations."
+      }
     >
       <div className="mx-auto grid max-w-5xl gap-6 lg:grid-cols-[1.05fr_0.95fr]">
         <Card className="hidden lg:block">
           <CardHeader>
-            <CardTitle className="text-2xl">Sign in to contact sellers</CardTitle>
+            <CardTitle className="text-2xl">
+              {isSignup ? "Create an account to start chatting" : "Sign in to contact sellers"}
+            </CardTitle>
             <CardDescription>
               Start chats from listing pages, continue conversations in one inbox, and come back
               to where you left off.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <p>After login, you will be redirected to your requested page.</p>
+            <p>
+              After {isSignup ? "signup" : "login"}, you will be redirected to your requested
+              page.
+            </p>
             <p>Example flows: listing detail → inquiry → conversation thread.</p>
           </CardContent>
         </Card>
@@ -72,18 +85,51 @@ export default function LoginClientPage() {
         <Card>
           <CardHeader>
             <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <LogIn className="h-5 w-5" />
+              {isSignup ? <UserPlus className="h-5 w-5" /> : <LogIn className="h-5 w-5" />}
             </div>
-            <CardTitle>Login</CardTitle>
-            <CardDescription>Enter your email and password.</CardDescription>
+            <CardTitle>{isSignup ? "Create Account" : "Login"}</CardTitle>
+            <CardDescription>
+              {isSignup
+                ? "Enter your email and a password (minimum 8 characters)."
+                : "Enter your email and password."}
+            </CardDescription>
           </CardHeader>
           <CardContent>
+            {signupMessage ? (
+              <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                {signupMessage}
+              </div>
+            ) : null}
             <form
               className="space-y-4"
               onSubmit={form.handleSubmit(async (values) => {
                 setSubmitting(true);
+                setSignupMessage(null);
                 try {
                   const supabase = getSupabaseBrowser();
+                  if (isSignup) {
+                    const { data, error } = await supabase.auth.signUp({
+                      email: values.email.trim(),
+                      password: values.password,
+                    });
+
+                    if (error) {
+                      toast.error(error.message);
+                      return;
+                    }
+
+                    if (data.session?.access_token) {
+                      toast.success("Account created");
+                      router.replace(nextPath);
+                      return;
+                    }
+
+                    setSignupMessage("Check your email to confirm your account.");
+                    toast.success("Account created. Check your email to confirm your account.");
+                    form.reset({ email: values.email.trim(), password: "" });
+                    return;
+                  }
+
                   const { error } = await supabase.auth.signInWithPassword({
                     email: values.email.trim(),
                     password: values.password,
@@ -97,7 +143,13 @@ export default function LoginClientPage() {
                   toast.success("Signed in");
                   router.replace(nextPath);
                 } catch (err) {
-                  toast.error(err instanceof Error ? err.message : "Login failed");
+                  toast.error(
+                    err instanceof Error
+                      ? err.message
+                      : isSignup
+                        ? "Signup failed"
+                        : "Login failed",
+                  );
                 } finally {
                   setSubmitting(false);
                 }
@@ -122,7 +174,7 @@ export default function LoginClientPage() {
                 <Input
                   id="login-password"
                   type="password"
-                  autoComplete="current-password"
+                  autoComplete={isSignup ? "new-password" : "current-password"}
                   placeholder="••••••••"
                   disabled={submitting}
                   {...form.register("password")}
@@ -136,8 +188,24 @@ export default function LoginClientPage() {
 
               <Button type="submit" className="w-full" disabled={submitting}>
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Sign In
+                {isSignup ? "Create Account" : "Sign In"}
               </Button>
+
+              <div className="text-center text-sm text-muted-foreground">
+                {isSignup ? "Already have an account?" : "Need an account?"}{" "}
+                <button
+                  type="button"
+                  className="font-medium text-primary underline-offset-4 hover:underline"
+                  onClick={() => {
+                    setMode((prev) => (prev === "signin" ? "signup" : "signin"));
+                    setSignupMessage(null);
+                    form.clearErrors();
+                  }}
+                  disabled={submitting}
+                >
+                  {isSignup ? "Sign in" : "Create account"}
+                </button>
+              </div>
             </form>
           </CardContent>
         </Card>
