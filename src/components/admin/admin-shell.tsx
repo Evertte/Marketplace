@@ -3,7 +3,16 @@
 import type React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, ListChecks, Loader2, LogOut, PlusSquare, ShieldAlert } from "lucide-react";
+import {
+  ExternalLink,
+  LayoutDashboard,
+  ListChecks,
+  Loader2,
+  LogOut,
+  MessageSquare,
+  PlusSquare,
+  ShieldAlert,
+} from "lucide-react";
 import { useEffect } from "react";
 
 import { Badge } from "@/src/components/ui/badge";
@@ -102,10 +111,24 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       <div className="mx-auto grid max-w-7xl gap-6 p-4 md:p-6 lg:grid-cols-[260px_1fr]">
         <aside className="rounded-2xl border bg-card p-4 shadow-panel lg:sticky lg:top-6 lg:h-[calc(100dvh-3rem)]">
           <div className="mb-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-              Admin
-            </p>
-            <h1 className="mt-1 text-lg font-semibold">Marketplace Console</h1>
+            <Link
+              href="/"
+              className="group flex items-center gap-3 rounded-xl border bg-muted/20 px-3 py-3 transition hover:bg-muted/40"
+              title="Go to public homepage"
+            >
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary text-primary-foreground">
+                <MessageSquare className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                  Admin
+                </p>
+                <div className="flex items-center gap-1">
+                  <h1 className="truncate text-lg font-semibold">Marketplace Console</h1>
+                  <ExternalLink className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition group-hover:opacity-100" />
+                </div>
+              </div>
+            </Link>
           </div>
           <nav className="space-y-2">
             {NAV_ITEMS.map((item) => {
@@ -161,9 +184,19 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               <p className="text-sm text-muted-foreground">Admin Console</p>
               <p className="font-medium">Manage listings and media</p>
             </div>
-            <div className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Link
+                href="/"
+                className={cn(
+                  buttonVariants({ variant: "outline", size: "sm" }),
+                  "hidden sm:inline-flex",
+                )}
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                View Site
+              </Link>
               {profileLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {profileLoading ? "Refreshing profile..." : "Ready"}
+              <span className="hidden sm:inline">{profileLoading ? "Refreshing profile..." : "Ready"}</span>
             </div>
           </header>
           {children}
