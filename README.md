@@ -18,3 +18,11 @@ npx prisma generate
 NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key> npm run dev
 curl -H "Authorization: Bearer <SUPABASE_ACCESS_TOKEN>" http://localhost:3000/api/v1/admin/listings?limit=5
 ```
+
+Run `classifieds-api/supabase/sql/20260228_realtime_broadcast_rls.sql` in the Supabase SQL Editor before testing realtime chat.
+
+Manual realtime test:
+1. Sign in as a buyer in one browser and as the admin in a second browser.
+2. Create or open a conversation so both users can load `/messages/<conversationId>`.
+3. Send a message from one browser and verify the other browser updates immediately without waiting for a poll.
+4. Use the thread refresh button if the realtime status badge shows disconnected.

@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src
 import { Skeleton } from "@/src/components/ui/skeleton";
 import { authApiJson, ClientApiError } from "@/src/lib/api/client";
 import { useUserAuth } from "@/src/lib/auth/user-auth";
+import { CONVERSATION_ACTIVITY_EVENT, type ConversationActivityDetail } from "@/src/lib/chat/realtime";
 import type { ConversationsResponse } from "@/src/lib/client/types";
 
 type ConversationItem = ConversationsResponse["data"][number];
@@ -77,13 +78,19 @@ export function MessagesShell({
 
   useEffect(() => {
     if (!session?.access_token) return;
-    const interval = window.setInterval(() => {
-      if (!document.hidden) {
-        void loadConversations(undefined, false).catch(() => {});
+
+    function handleActivity(event: Event) {
+      const detail = (event as CustomEvent<ConversationActivityDetail>).detail;
+      if (selectedConversationId && detail?.conversationId !== selectedConversationId) {
+        return;
       }
-    }, 4000);
-    return () => window.clearInterval(interval);
-  }, [session?.access_token]);
+
+      void loadConversations(undefined, false).catch(() => {});
+    }
+
+    window.addEventListener(CONVERSATION_ACTIVITY_EVENT, handleActivity);
+    return () => window.removeEventListener(CONVERSATION_ACTIVITY_EVENT, handleActivity);
+  }, [selectedConversationId, session?.access_token]);
 
   useEffect(() => {
     if (!autoSelectFirst) return;
@@ -123,7 +130,7 @@ export function MessagesShell({
           <div className="flex items-center justify-between gap-2">
             <div>
               <CardTitle className="text-lg">Conversations</CardTitle>
-              <CardDescription>Polling every 4s</CardDescription>
+              <CardDescription>Manual refresh with realtime conversation updates</CardDescription>
             </div>
             <Button
               variant="outline"
@@ -255,4 +262,3 @@ export function MessagesShell({
     </div>
   );
 }
-
