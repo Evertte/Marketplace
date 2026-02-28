@@ -150,10 +150,45 @@ export type MarkConversationReadResponse = {
 
 export type ReportReason = "spam" | "scam" | "harassment" | "inappropriate" | "other";
 export type ReportStatus = "open" | "reviewing" | "resolved" | "dismissed";
+export type NotificationType = "NEW_MESSAGE" | "NEW_INQUIRY" | "LISTING_PUBLISHED" | "SYSTEM";
 
 export type CreateReportResponse = {
   data: {
     id: string;
     status: ReportStatus;
+  };
+};
+
+export type NotificationItem = {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string | null;
+  href: string | null;
+  data: unknown;
+  readAt: string | null;
+  createdAt: string;
+};
+
+export type NotificationsResponse = {
+  data: NotificationItem[];
+  page: {
+    limit: number;
+    next_cursor: string | null;
+    has_more: boolean;
+  };
+  unreadCount: number;
+};
+
+export type ReadNotificationResponse = {
+  data: {
+    id: string;
+    readAt: string;
+  };
+};
+
+export type ReadAllNotificationsResponse = {
+  data: {
+    readAt: string;
   };
 };

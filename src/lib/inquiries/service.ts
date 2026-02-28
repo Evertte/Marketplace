@@ -17,6 +17,7 @@ type CreateInquiryResult = {
   conversation_id: string;
   listing_id: string;
   created: boolean;
+  sellerUserId: string;
 };
 
 type AdminInquiryInboxItem = {
@@ -251,6 +252,7 @@ export async function createInquiryAndAutoConversation(
       conversation_id: conversation.id,
       listing_id: inquiry.listingId,
       created,
+      sellerUserId,
     };
   });
 }

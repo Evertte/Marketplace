@@ -109,6 +109,8 @@ type ConversationMessagesPage = {
 type CreateConversationMessageResult = {
   message_id: string;
   createdAt: string;
+  recipientUserId: string;
+  preview: string | null;
 };
 
 function toIso(value: Date): string {
@@ -536,6 +538,12 @@ export async function createConversationTextMessageForUser(
   return {
     message_id: created.id,
     createdAt: toIso(created.createdAt),
+    recipientUserId:
+      actor.id === conversation.buyerUserId ? conversation.sellerUserId : conversation.buyerUserId,
+    preview: buildLastMessagePreview({
+      kind: "text",
+      text: input.text,
+    }),
   };
 }
 

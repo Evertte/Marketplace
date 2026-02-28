@@ -10,6 +10,7 @@ import {
 } from "../../../../../../src/lib/chat/validators";
 import { errorResponseFromUnknown } from "../../../../../../src/lib/http/errors";
 import { readJsonObjectBody } from "../../../../../../src/lib/listings/admin";
+import { createNotificationAndBroadcast } from "../../../../../../src/lib/notifications/service";
 
 export const runtime = "nodejs";
 
@@ -43,7 +44,27 @@ export async function POST(req: NextRequest, context: RouteContext) {
       messageId: result.message_id,
       createdAt: result.createdAt,
     });
-    return NextResponse.json({ data: result }, { status: 201 });
+    await createNotificationAndBroadcast({
+      userId: result.recipientUserId,
+      type: "NEW_MESSAGE",
+      title: "New message",
+      body: result.preview,
+      href: `/messages/${conversationId}`,
+      data: {
+        conversationId,
+        messageId: result.message_id,
+        senderId: user.id,
+      },
+    });
+    return NextResponse.json(
+      {
+        data: {
+          message_id: result.message_id,
+          createdAt: result.createdAt,
+        },
+      },
+      { status: 201 },
+    );
   } catch (error) {
     return errorResponseFromUnknown(req, error);
   }
