@@ -4,6 +4,8 @@ export type ListingType = "car" | "building" | "land";
 export type ListingStatus = "draft" | "published" | "archived";
 export type MediaKind = "image" | "video";
 export type MediaStatus = "uploading" | "ready" | "failed";
+export type ReportReason = "spam" | "scam" | "harassment" | "inappropriate" | "other";
+export type ReportStatus = "open" | "reviewing" | "resolved" | "dismissed";
 
 export type ApiErrorEnvelope = {
   error: {
@@ -139,5 +141,94 @@ export type PublicListingsResponse = {
     limit: number;
     next_cursor: string | null;
     has_more: boolean;
+  };
+};
+
+export type AdminReportsListResponse = {
+  data: Array<{
+    report: {
+      id: string;
+      reason: ReportReason;
+      note: string | null;
+      adminNote: string | null;
+      status: ReportStatus;
+      createdAt: string;
+      updatedAt: string;
+      conversationId: string;
+      messageId: string | null;
+    };
+    reporter: {
+      id: string;
+      email: string;
+      status: UserStatus;
+    };
+    reported: {
+      id: string;
+      email: string;
+      status: UserStatus;
+    };
+    conversation: {
+      id: string;
+      listingId: string;
+      listingTitle: string;
+    };
+    messageSnippet: string | null;
+  }>;
+};
+
+export type AdminReportDetailResponse = {
+  data: {
+    report: {
+      id: string;
+      reason: ReportReason;
+      note: string | null;
+      adminNote: string | null;
+      status: ReportStatus;
+      createdAt: string;
+      updatedAt: string;
+      conversationId: string;
+      messageId: string | null;
+    };
+    reporter: {
+      id: string;
+      email: string;
+      status: UserStatus;
+    };
+    reported: {
+      id: string;
+      email: string;
+      status: UserStatus;
+    };
+    conversation: {
+      id: string;
+      listingId: string;
+      listingTitle: string;
+      buyerUserId: string;
+      sellerUserId: string;
+    };
+    messages: Array<{
+      id: string;
+      senderUserId: string;
+      text: string | null;
+      kind: "text" | "media";
+      createdAt: string;
+      isReportedTarget: boolean;
+    }>;
+  };
+};
+
+export type UpdateReportResponse = {
+  data: {
+    id: string;
+    status: ReportStatus;
+    adminNote: string | null;
+    updatedAt: string;
+  };
+};
+
+export type BanMutationResponse = {
+  data: {
+    userId: string;
+    status: UserStatus;
   };
 };
