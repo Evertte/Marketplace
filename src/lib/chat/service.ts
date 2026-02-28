@@ -4,6 +4,7 @@ import type {
   Prisma,
   User,
 } from "@prisma/client";
+import { Prisma as PrismaNamespace } from "@prisma/client";
 
 import { prisma } from "../db/prisma";
 import { ApiError } from "../http/errors";
@@ -41,7 +42,16 @@ type ConversationListItem = {
     updatedAt: string;
   };
   hasUnread: boolean;
+  unreadCount: number;
   lastMessagePreview: string | null;
+  lastMessageSenderId: string | null;
+  isPinned: boolean;
+  pinnedAt: string | null;
+  otherUser: {
+    id: string;
+    name: string;
+    avatarUrl: string | null;
+  };
   listing: {
     id: string;
     type: ListingType;
@@ -52,10 +62,6 @@ type ConversationListItem = {
     locationRegion: string;
     locationCity: string;
     coverImageUrl: string | null;
-  };
-  buyer: {
-    id: string;
-    email: string;
   };
 };
 
@@ -71,6 +77,11 @@ type ConversationsListPage = {
 type ArchiveConversationResult = {
   conversationId: string;
   archivedAt: string | null;
+};
+
+type PinConversationResult = {
+  conversationId: string;
+  pinnedAt: string | null;
 };
 
 type PurgeConversationResult = {
@@ -121,6 +132,12 @@ function decimalToString(value: Prisma.Decimal): string {
   return value.toString();
 }
 
+function numericToString(value: Prisma.Decimal | string | number): string {
+  if (typeof value === "number") return String(value);
+  if (typeof value === "string") return value;
+  return value.toString();
+}
+
 function buildLastMessagePreview(message: {
   kind: MessageKind;
   text: string | null;
@@ -135,6 +152,25 @@ function buildLastMessagePreview(message: {
   if (!text) return null;
   if (text.length <= 100) return text;
   return `${text.slice(0, 97)}...`;
+}
+
+function buildLastMessagePreviewText(args: {
+  kind: MessageKind | null;
+  text: string | null;
+  senderUserId: string | null;
+  actorId: string;
+}): string | null {
+  const preview = buildLastMessagePreview(
+    args.kind
+      ? {
+          kind: args.kind,
+          text: args.text,
+        }
+      : null,
+  );
+
+  if (!preview) return null;
+  return args.senderUserId === args.actorId ? `You: ${preview}` : preview;
 }
 
 function mapConversationReadState(
@@ -201,181 +237,212 @@ function assertActiveActor(actor: ChatActor): void {
 
 function buildConversationCursorWhere(
   cursor: ConversationsCursor | undefined,
-): Prisma.ConversationWhereInput | undefined {
-  if (!cursor) return undefined;
+): Prisma.Sql {
+  if (!cursor) return PrismaNamespace.empty;
 
-  const cursorCreatedAt = new Date(cursor.createdAt);
+  const activityExpr = PrismaNamespace.sql`COALESCE(lm."createdAt", c."lastMessageAt", c."createdAt")`;
+  const cursorActivityAt = new Date(cursor.activityAt);
 
-  if (cursor.lastMessageAt === null) {
-    return {
-      lastMessageAt: null,
-      OR: [
-        { createdAt: { lt: cursorCreatedAt } },
-        { createdAt: cursorCreatedAt, id: { lt: cursor.id } },
-      ],
-    };
+  if (cursor.pinnedAt === null) {
+    return PrismaNamespace.sql`
+      AND cp."pinnedAt" IS NULL
+      AND (
+        ${activityExpr} < ${cursorActivityAt}
+        OR (${activityExpr} = ${cursorActivityAt} AND c.id < ${cursor.id}::uuid)
+      )
+    `;
   }
 
-  const cursorLastMessageAt = new Date(cursor.lastMessageAt);
-
-  return {
-    OR: [
-      { lastMessageAt: { lt: cursorLastMessageAt } },
-      {
-        lastMessageAt: cursorLastMessageAt,
-        createdAt: { lt: cursorCreatedAt },
-      },
-      {
-        lastMessageAt: cursorLastMessageAt,
-        createdAt: cursorCreatedAt,
-        id: { lt: cursor.id },
-      },
-      { lastMessageAt: null },
-    ],
-  };
+  const cursorPinnedAt = new Date(cursor.pinnedAt);
+  return PrismaNamespace.sql`
+    AND (
+      cp."pinnedAt" IS NULL
+      OR cp."pinnedAt" < ${cursorPinnedAt}
+      OR (
+        cp."pinnedAt" = ${cursorPinnedAt}
+        AND (
+          ${activityExpr} < ${cursorActivityAt}
+          OR (${activityExpr} = ${cursorActivityAt} AND c.id < ${cursor.id}::uuid)
+        )
+      )
+    )
+  `;
 }
 
 function buildConversationsNextCursor(last: {
   id: string;
-  lastMessageAt: Date | null;
-  createdAt: Date;
+  pinnedAt: Date | null;
+  activityAt: Date;
 }): string {
   const cursor: ConversationsCursor = {
     v: 1,
     sort: "activity",
     order: "desc",
-    lastMessageAt: last.lastMessageAt ? toIso(last.lastMessageAt) : null,
-    createdAt: toIso(last.createdAt),
+    pinnedAt: last.pinnedAt ? toIso(last.pinnedAt) : null,
+    activityAt: toIso(last.activityAt),
     id: last.id,
   };
 
   return encodeConversationsCursor(cursor);
 }
 
+type ConversationInboxRow = {
+  conversationId: string;
+  listingId: string;
+  buyerUserId: string;
+  sellerUserId: string;
+  conversationCreatedAt: Date;
+  conversationUpdatedAt: Date;
+  lastMessageAt: Date | null;
+  pinnedAt: Date | null;
+  activityAt: Date;
+  lastMessageSenderId: string | null;
+  lastMessageKind: MessageKind | null;
+  lastMessageText: string | null;
+  unreadCount: number;
+  listingType: ListingType;
+  listingTitle: string;
+  listingPrice: Prisma.Decimal | string | number;
+  listingCurrency: string;
+  locationCountry: string;
+  locationRegion: string;
+  locationCity: string;
+  coverImageUrl: string | null;
+  buyerEmail: string;
+  sellerEmail: string;
+};
+
 export async function listUserConversations(
   actor: ChatActor,
   query: ConversationsListQuery,
 ): Promise<ConversationsListPage> {
-  const roleFilter: Prisma.ConversationWhereInput = {
-    participants: {
-      some: {
-        userId: actor.id,
-        archivedAt: query.archived ? { not: null } : null,
-      },
-    },
-  };
-
+  const archivedFilter = query.archived
+    ? PrismaNamespace.sql`cp."archivedAt" IS NOT NULL`
+    : PrismaNamespace.sql`cp."archivedAt" IS NULL`;
   const cursorWhere = buildConversationCursorWhere(query.cursor);
 
-  const rows = await prisma.conversation.findMany({
-    where: cursorWhere ? { AND: [roleFilter, cursorWhere] } : roleFilter,
-    orderBy: [
-      { lastMessageAt: { sort: "desc", nulls: "last" } },
-      { createdAt: "desc" },
-      { id: "desc" },
-    ],
-    take: query.limit + 1,
-    select: {
-      id: true,
-      listingId: true,
-      buyerUserId: true,
-      sellerUserId: true,
-      lastMessageAt: true,
-      createdAt: true,
-      updatedAt: true,
-      messages: {
-        take: 1,
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        select: {
-          id: true,
-          createdAt: true,
-          kind: true,
-          text: true,
-        },
-      },
-      readStates: {
-        where: { userId: actor.id },
-        take: 1,
-        select: {
-          conversationId: true,
-          userId: true,
-          lastReadMessageId: true,
-          lastReadAt: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      },
-      buyerUser: {
-        select: {
-          id: true,
-          email: true,
-        },
-      },
-      listing: {
-        select: {
-          id: true,
-          type: true,
-          title: true,
-          price: true,
-          currency: true,
-          locationCountry: true,
-          locationRegion: true,
-          locationCity: true,
-          listingMedia: {
-            take: 1,
-            orderBy: [{ sortOrder: "asc" }, { mediaId: "asc" }],
-            select: {
-              media: {
-                select: {
-                  url: true,
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  });
+  const rows = await prisma.$queryRaw<ConversationInboxRow[]>(PrismaNamespace.sql`
+    SELECT
+      c.id AS "conversationId",
+      c."listingId" AS "listingId",
+      c."buyerUserId" AS "buyerUserId",
+      c."sellerUserId" AS "sellerUserId",
+      c."createdAt" AS "conversationCreatedAt",
+      c."updatedAt" AS "conversationUpdatedAt",
+      c."lastMessageAt" AS "lastMessageAt",
+      cp."pinnedAt" AS "pinnedAt",
+      COALESCE(lm."createdAt", c."lastMessageAt", c."createdAt") AS "activityAt",
+      lm."senderUserId" AS "lastMessageSenderId",
+      lm.kind AS "lastMessageKind",
+      lm.text AS "lastMessageText",
+      COALESCE(unread."unreadCount", 0)::int AS "unreadCount",
+      l.type AS "listingType",
+      l.title AS "listingTitle",
+      l.price AS "listingPrice",
+      l.currency AS "listingCurrency",
+      l."locationCountry" AS "locationCountry",
+      l."locationRegion" AS "locationRegion",
+      l."locationCity" AS "locationCity",
+      hero.url AS "coverImageUrl",
+      buyer.email AS "buyerEmail",
+      seller.email AS "sellerEmail"
+    FROM "ConversationParticipant" cp
+    JOIN "Conversation" c
+      ON c.id = cp."conversationId"
+    JOIN "Listing" l
+      ON l.id = c."listingId"
+    JOIN "User" buyer
+      ON buyer.id = c."buyerUserId"
+    JOIN "User" seller
+      ON seller.id = c."sellerUserId"
+    LEFT JOIN LATERAL (
+      SELECT
+        m."createdAt",
+        m."senderUserId",
+        m.kind,
+        m.text
+      FROM "Message" m
+      WHERE m."conversationId" = c.id
+      ORDER BY m."createdAt" DESC, m.id DESC
+      LIMIT 1
+    ) lm ON true
+    LEFT JOIN LATERAL (
+      SELECT COUNT(*)::int AS "unreadCount"
+      FROM "Message" m
+      LEFT JOIN "ConversationReadState" rs
+        ON rs."conversationId" = c.id
+       AND rs."userId" = ${actor.id}::uuid
+      WHERE m."conversationId" = c.id
+        AND m."senderUserId" <> ${actor.id}::uuid
+        AND (rs."lastReadAt" IS NULL OR m."createdAt" > rs."lastReadAt")
+    ) unread ON true
+    LEFT JOIN LATERAL (
+      SELECT media.url
+      FROM "ListingMedia" listing_media
+      JOIN "Media" media
+        ON media.id = listing_media."mediaId"
+      WHERE listing_media."listingId" = l.id
+      ORDER BY listing_media."sortOrder" ASC, listing_media."mediaId" ASC
+      LIMIT 1
+    ) hero ON true
+    WHERE cp."userId" = ${actor.id}::uuid
+      AND ${archivedFilter}
+      ${cursorWhere}
+    ORDER BY
+      (cp."pinnedAt" IS NOT NULL) DESC,
+      cp."pinnedAt" DESC NULLS LAST,
+      COALESCE(lm."createdAt", c."lastMessageAt", c."createdAt") DESC,
+      c.id DESC
+    LIMIT ${query.limit + 1}
+  `);
 
   const hasMore = rows.length > query.limit;
   const slice = hasMore ? rows.slice(0, query.limit) : rows;
-  const nextCursor = hasMore ? buildConversationsNextCursor(slice[slice.length - 1]!) : null;
+  const nextCursor = hasMore
+    ? buildConversationsNextCursor({
+        id: slice[slice.length - 1]!.conversationId,
+        pinnedAt: slice[slice.length - 1]!.pinnedAt,
+        activityAt: slice[slice.length - 1]!.activityAt,
+      })
+    : null;
 
   return {
     data: slice.map((row) => ({
-      ...(() => {
-        const latestMessageAt = row.messages[0]?.createdAt ?? row.lastMessageAt ?? null;
-        const myReadState = row.readStates[0] ?? null;
-        const hasUnread =
-          latestMessageAt !== null &&
-          (myReadState?.lastReadAt == null || latestMessageAt > myReadState.lastReadAt);
-
-        return { hasUnread };
-      })(),
       conversation: {
-        id: row.id,
+        id: row.conversationId,
         listingId: row.listingId,
         buyerUserId: row.buyerUserId,
         sellerUserId: row.sellerUserId,
         lastMessageAt: row.lastMessageAt ? toIso(row.lastMessageAt) : null,
-        createdAt: toIso(row.createdAt),
-        updatedAt: toIso(row.updatedAt),
+        createdAt: toIso(row.conversationCreatedAt),
+        updatedAt: toIso(row.conversationUpdatedAt),
       },
-      lastMessagePreview: buildLastMessagePreview(row.messages[0] ?? null),
+      hasUnread: row.unreadCount > 0,
+      unreadCount: row.unreadCount,
+      lastMessagePreview: buildLastMessagePreviewText({
+        kind: row.lastMessageKind,
+        text: row.lastMessageText,
+        senderUserId: row.lastMessageSenderId,
+        actorId: actor.id,
+      }),
+      lastMessageSenderId: row.lastMessageSenderId,
+      isPinned: row.pinnedAt !== null,
+      pinnedAt: row.pinnedAt ? toIso(row.pinnedAt) : null,
+      otherUser: {
+        id: actor.role === "admin" ? row.buyerUserId : row.sellerUserId,
+        name: actor.role === "admin" ? row.buyerEmail : "Marketplace Admin",
+        avatarUrl: null,
+      },
       listing: {
-        id: row.listing.id,
-        type: row.listing.type,
-        title: row.listing.title,
-        price: decimalToString(row.listing.price),
-        currency: row.listing.currency,
-        locationCountry: row.listing.locationCountry,
-        locationRegion: row.listing.locationRegion,
-        locationCity: row.listing.locationCity,
-        coverImageUrl: row.listing.listingMedia[0]?.media.url ?? null,
-      },
-      buyer: {
-        id: row.buyerUser.id,
-        email: row.buyerUser.email,
+        id: row.listingId,
+        type: row.listingType,
+        title: row.listingTitle,
+        price: numericToString(row.listingPrice),
+        currency: row.listingCurrency,
+        locationCountry: row.locationCountry,
+        locationRegion: row.locationRegion,
+        locationCity: row.locationCity,
+        coverImageUrl: row.coverImageUrl,
       },
     })),
     page: {
@@ -613,9 +680,11 @@ export async function archiveConversationForUser(
       userId: actor.id,
       role: actor.id === conversation.buyerUserId ? "buyer" : "seller",
       archivedAt,
+      pinnedAt: null,
     },
     update: {
       archivedAt,
+      pinnedAt: null,
     },
     select: {
       id: true,
@@ -659,6 +728,74 @@ export async function unarchiveConversationForUser(
   return {
     conversationId: conversation.id,
     archivedAt: null,
+  };
+}
+
+export async function pinConversationForUser(
+  actor: ChatActor,
+  conversationId: string,
+): Promise<PinConversationResult> {
+  const conversation = await getConversationMembership(conversationId);
+  assertConversationAccess(actor, conversation);
+
+  const pinnedAt = new Date();
+  await prisma.conversationParticipant.upsert({
+    where: {
+      conversationId_userId: {
+        conversationId: conversation.id,
+        userId: actor.id,
+      },
+    },
+    create: {
+      conversationId: conversation.id,
+      userId: actor.id,
+      role: actor.id === conversation.buyerUserId ? "buyer" : "seller",
+      archivedAt: null,
+      pinnedAt,
+    },
+    update: {
+      archivedAt: null,
+      pinnedAt,
+    },
+    select: { id: true },
+  });
+
+  return {
+    conversationId: conversation.id,
+    pinnedAt: toIso(pinnedAt),
+  };
+}
+
+export async function unpinConversationForUser(
+  actor: ChatActor,
+  conversationId: string,
+): Promise<PinConversationResult> {
+  const conversation = await getConversationMembership(conversationId);
+  assertConversationAccess(actor, conversation);
+
+  await prisma.conversationParticipant.upsert({
+    where: {
+      conversationId_userId: {
+        conversationId: conversation.id,
+        userId: actor.id,
+      },
+    },
+    create: {
+      conversationId: conversation.id,
+      userId: actor.id,
+      role: actor.id === conversation.buyerUserId ? "buyer" : "seller",
+      archivedAt: null,
+      pinnedAt: null,
+    },
+    update: {
+      pinnedAt: null,
+    },
+    select: { id: true },
+  });
+
+  return {
+    conversationId: conversation.id,
+    pinnedAt: null,
   };
 }
 

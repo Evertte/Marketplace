@@ -4,8 +4,8 @@ export type ConversationsCursor = {
   v: 1;
   sort: "activity";
   order: "desc";
-  lastMessageAt: string | null;
-  createdAt: string;
+  pinnedAt: string | null;
+  activityAt: string;
   id: string;
 };
 
@@ -30,9 +30,9 @@ export function decodeConversationsCursor(cursor: string): ConversationsCursor {
       parsed.v !== 1 ||
       parsed.sort !== "activity" ||
       parsed.order !== "desc" ||
-      typeof parsed.createdAt !== "string" ||
+      typeof parsed.activityAt !== "string" ||
       typeof parsed.id !== "string" ||
-      (parsed.lastMessageAt !== null && typeof parsed.lastMessageAt !== "string")
+      (parsed.pinnedAt !== null && typeof parsed.pinnedAt !== "string")
     ) {
       throw new Error("Invalid cursor");
     }
@@ -72,4 +72,3 @@ export function decodeConversationMessagesCursor(
     throw new ApiError(400, "INVALID_INPUT", "Invalid cursor");
   }
 }
-
