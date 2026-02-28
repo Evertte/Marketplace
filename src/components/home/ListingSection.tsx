@@ -34,16 +34,20 @@ export function ListingSection({
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+        <div className="-mx-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6">
+          <div className="flex min-w-max gap-4">
           {Array.from({ length: 4 }).map((_, index) => (
-            <Skeleton key={index} className="aspect-[16/10] rounded-[1.75rem]" />
+            <Skeleton key={index} className="h-[22rem] w-[18rem] shrink-0 rounded-[1.75rem]" />
           ))}
+          </div>
         </div>
       ) : items.length > 0 ? (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+        <div className="-mx-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6">
+          <div className="flex min-w-max snap-x snap-mandatory gap-4">
           {items.map((item) => (
-            <ListingCard key={item.id} listing={item} />
+            <ListingCard key={item.id} listing={item} className="w-[18rem] shrink-0 snap-start" />
           ))}
+          </div>
         </div>
       ) : (
         <div className="rounded-[1.75rem] border border-dashed border-slate-300 bg-white px-6 py-10 text-center text-sm text-slate-500">
