@@ -13,22 +13,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/ca
 import { Skeleton } from "@/src/components/ui/skeleton";
 import { apiJson, authApiJson, ClientApiError } from "@/src/lib/api/client";
 import { useUserAuth } from "@/src/lib/auth/user-auth";
+import { buildSellerWhatsAppLink } from "@/src/lib/utils";
 import type {
   CreateInquiryResponse,
   PublicListingDetailResponse,
 } from "@/src/lib/client/types";
 
 type ListingDetail = PublicListingDetailResponse["data"];
-
-function sellerWhatsappLink(listing: ListingDetail | null): string | null {
-  if (!listing) return null;
-  const raw = process.env.NEXT_PUBLIC_SELLER_WHATSAPP;
-  if (!raw) return null;
-  const phone = raw.replace(/[^\d]/g, "");
-  if (!phone) return null;
-  const message = `Hi, I'm interested in ${listing.title} (ID: ${listing.id})`;
-  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
-}
 
 export default function ListingDetailPage({
   params,
@@ -92,7 +83,16 @@ export default function ListingDetailPage({
   }, [listing?.id, session?.access_token, sessionLoading]);
 
   const selectedMedia = listing?.media[selectedMediaIndex] ?? listing?.media[0] ?? null;
-  const whatsappUrl = useMemo(() => sellerWhatsappLink(listing), [listing]);
+  const whatsappUrl = useMemo(
+    () =>
+      listing
+        ? buildSellerWhatsAppLink({
+            listingId: listing.id,
+            listingTitle: listing.title,
+          })
+        : null,
+    [listing],
+  );
 
   async function handleMessageSeller() {
     if (!listing) return;
@@ -263,24 +263,16 @@ export default function ListingDetailPage({
                   Message Seller
                 </Button>
 
-                {whatsappUrl ? (
-                  <a href={whatsappUrl} target="_blank" rel="noreferrer" className="block">
-                    <Button variant="outline" className="w-full">
-                      <Phone className="h-4 w-4" />
-                      WhatsApp Seller
-                    </Button>
-                  </a>
-                ) : (
+                <div className="rounded-xl border bg-muted/20 p-3 text-sm text-muted-foreground">
+                  Signed-in users can start a chat instantly. WhatsApp handoff is shown inside the
+                  chat UI after authentication.
+                </div>
+                {whatsappUrl ? null : (
                   <Button variant="outline" className="w-full" disabled>
                     <Phone className="h-4 w-4" />
                     WhatsApp unavailable
                   </Button>
                 )}
-
-                <div className="rounded-xl border bg-muted/20 p-3 text-sm text-muted-foreground">
-                  Signed-in users can start a chat instantly. If you are not signed in, you will
-                  be redirected to login and returned to this listing.
-                </div>
                 <Link href="/browse" className="text-sm text-primary underline-offset-4 hover:underline">
                   Back to browse
                 </Link>

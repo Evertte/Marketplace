@@ -32,3 +32,20 @@ export function truncate(value: string, length: number): string {
   if (value.length <= length) return value;
   return `${value.slice(0, Math.max(length - 1, 0)).trimEnd()}…`;
 }
+
+export function buildSellerWhatsAppLink({
+  listingId,
+  listingTitle,
+}: {
+  listingId: string;
+  listingTitle: string;
+}): string | null {
+  const raw = process.env.NEXT_PUBLIC_SELLER_WHATSAPP;
+  if (!raw) return null;
+
+  const phone = raw.replace(/[^\d]/g, "");
+  if (!phone) return null;
+
+  const message = `Hi, I'm interested in ${listingTitle} (ID: ${listingId})`;
+  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+}

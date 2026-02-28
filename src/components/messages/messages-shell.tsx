@@ -26,6 +26,7 @@ import {
 } from "@/src/lib/chat/realtime";
 import type { ConversationsResponse } from "@/src/lib/client/types";
 import { getSupabaseBrowser } from "@/src/lib/supabase/browser";
+import { buildSellerWhatsAppLink } from "@/src/lib/utils";
 
 type ConversationItem = ConversationsResponse["data"][number];
 
@@ -65,6 +66,19 @@ function getParticipantLabel(
 function formatUnreadCount(unreadCount: number): string {
   if (unreadCount > 99) return "99+";
   return String(unreadCount);
+}
+
+function WhatsAppGlyph() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 32 32"
+      className="h-4 w-4 fill-current"
+    >
+      <path d="M19.11 17.16c-.28-.14-1.65-.81-1.9-.9-.26-.09-.45-.14-.64.14-.19.28-.74.9-.91 1.08-.17.19-.33.21-.61.07-.28-.14-1.19-.44-2.27-1.41-.84-.75-1.41-1.68-1.58-1.96-.17-.28-.02-.43.12-.57.13-.13.28-.33.42-.49.14-.17.19-.28.28-.47.09-.19.05-.35-.02-.49-.07-.14-.64-1.55-.88-2.12-.23-.55-.47-.47-.64-.48h-.54c-.19 0-.49.07-.75.35-.26.28-.98.96-.98 2.34s1 2.72 1.14 2.91c.14.19 1.95 2.98 4.73 4.18.66.28 1.18.45 1.58.58.66.21 1.27.18 1.75.11.53-.08 1.65-.67 1.88-1.32.23-.64.23-1.19.16-1.32-.06-.13-.25-.2-.53-.34Z" />
+      <path d="M16.02 3.2c-6.97 0-12.64 5.67-12.64 12.64 0 2.23.58 4.4 1.68 6.32L3.2 28.8l6.8-1.79a12.6 12.6 0 0 0 6.02 1.53c6.97 0 12.64-5.67 12.64-12.64S22.99 3.2 16.02 3.2Zm0 22.94c-1.88 0-3.72-.51-5.32-1.48l-.38-.23-4.03 1.06 1.08-3.93-.25-.4a10.23 10.23 0 0 1-1.56-5.46c0-5.64 4.59-10.23 10.23-10.23S26 10.06 26 15.7s-4.59 10.44-9.98 10.44Z" />
+    </svg>
+  );
 }
 
 export function MessagesShell({
@@ -238,6 +252,16 @@ export function MessagesShell({
   const selectedItem = useMemo(
     () => items.find((item) => item.conversation.id === selectedConversationId) ?? null,
     [items, selectedConversationId],
+  );
+  const selectedWhatsAppUrl = useMemo(
+    () =>
+      selectedItem
+        ? buildSellerWhatsAppLink({
+            listingId: selectedItem.listing.id,
+            listingTitle: selectedItem.listing.title,
+          })
+        : null,
+    [selectedItem],
   );
 
   async function restoreConversation(conversationId: string) {
@@ -665,10 +689,25 @@ export function MessagesShell({
                   </CardDescription>
                 </div>
               </div>
-              <Button type="button" variant="outline" size="sm" onClick={() => setReportModalOpen(true)}>
-                <ShieldAlert className="h-4 w-4" />
-                Report
-              </Button>
+              <div className="flex items-center gap-2">
+                {selectedWhatsAppUrl ? (
+                  <a href={selectedWhatsAppUrl} target="_blank" rel="noreferrer">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800"
+                    >
+                      <WhatsAppGlyph />
+                      WhatsApp
+                    </Button>
+                  </a>
+                ) : null}
+                <Button type="button" variant="outline" size="sm" onClick={() => setReportModalOpen(true)}>
+                  <ShieldAlert className="h-4 w-4" />
+                  Report
+                </Button>
+              </div>
             </div>
           ) : (
             <>
