@@ -1,71 +1,36 @@
 "use client";
 
-import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { AlertTriangle, BadgeCheck, Lock } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { ListingCard } from "@/src/components/site/listing-card";
+import { CategoryTiles } from "@/src/components/home/CategoryTiles";
+import { Hero } from "@/src/components/home/Hero";
+import { ListingSection } from "@/src/components/home/ListingSection";
 import { PublicShell } from "@/src/components/site/public-shell";
-import { Button, buttonVariants } from "@/src/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/card";
-import { Skeleton } from "@/src/components/ui/skeleton";
+import { Button } from "@/src/components/ui/button";
+import { Card, CardContent } from "@/src/components/ui/card";
 import { apiJson } from "@/src/lib/api/client";
-import type { HomeResponse, ListingType } from "@/src/lib/client/types";
-import { cn } from "@/src/lib/utils";
+import type { HomeResponse } from "@/src/lib/client/types";
 
 type HomeState = HomeResponse["data"] | null;
 
-function Section({
-  type,
-  title,
-  items,
-  loading,
-}: {
-  type: ListingType;
-  title: string;
-  items: HomeResponse["data"]["cars"]["items"];
-  loading: boolean;
-}) {
-  return (
-    <section className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold">{title}</h2>
-          <p className="text-sm text-muted-foreground">
-            Recently published {title.toLowerCase()} listings
-          </p>
-        </div>
-        <Link
-          href={`/browse?type=${type}`}
-          className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-        >
-          View all
-          <ArrowRight className="h-4 w-4" />
-        </Link>
-      </div>
-
-      {loading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-          {Array.from({ length: 5 }).map((_, index) => (
-            <Skeleton key={index} className="h-80 w-full" />
-          ))}
-        </div>
-      ) : items.length > 0 ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-          {items.map((item) => (
-            <ListingCard key={item.id} listing={item} />
-          ))}
-        </div>
-      ) : (
-        <Card>
-          <CardContent className="p-6 text-center text-sm text-muted-foreground">
-            No published {title.toLowerCase()} listings yet.
-          </CardContent>
-        </Card>
-      )}
-    </section>
-  );
-}
+const TRUST_ITEMS = [
+  {
+    title: "Secure messaging",
+    description: "Connect with sellers directly in-app without exposing personal contact details.",
+    icon: Lock,
+  },
+  {
+    title: "Report scams",
+    description: "Built-in reporting and moderation tools help keep risky behaviour out of the marketplace.",
+    icon: AlertTriangle,
+  },
+  {
+    title: "Verified listings",
+    description: "Published inventory is managed through an admin-reviewed workflow for cleaner discovery.",
+    icon: BadgeCheck,
+  },
+] as const;
 
 export default function HomePage() {
   const [data, setData] = useState<HomeState>(null);
@@ -77,13 +42,13 @@ export default function HomePage() {
 
     apiJson<HomeResponse>("/api/v1/home")
       .then((response) => {
-        if (active) {
-          setData(response.data);
-          setError(null);
-        }
+        if (!active) return;
+        setData(response.data);
+        setError(null);
       })
       .catch((err) => {
-        if (active) setError(err instanceof Error ? err.message : "Failed to load home");
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "Failed to load home");
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -95,35 +60,19 @@ export default function HomePage() {
   }, []);
 
   return (
-    <PublicShell
-      title="Find your next car, building, or land"
-      subtitle="Browse published listings and message sellers directly after signing in. Start with curated sections below or jump into filtered search."
-    >
-      <div className="space-y-8">
-        <Card className="overflow-hidden bg-gradient-to-br from-primary/10 via-background to-accent/30">
-          <CardHeader>
-            <CardTitle className="text-xl md:text-2xl">
-              Browse the marketplace with search, filters, and direct messaging
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
-            <Link href="/browse" className={cn(buttonVariants({ size: "sm" }))}>
-              Start Browsing
-            </Link>
-            <Link
-              href="/messages"
-              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-            >
-              Open Messages
-            </Link>
-          </CardContent>
-        </Card>
+    <PublicShell>
+      <div className="space-y-10 md:space-y-14">
+        <div className="relative">
+          <div className="pointer-events-none absolute inset-x-8 top-4 -z-10 h-48 rounded-full bg-slate-200/50 blur-3xl sm:inset-x-20 sm:h-56" />
+          <Hero />
+        </div>
+        <CategoryTiles />
 
         {error ? (
-          <Card>
+          <Card className="rounded-[1.75rem] border-destructive/20 bg-destructive/5">
             <CardContent className="p-6">
-              <p className="font-medium">Failed to load marketplace home</p>
-              <p className="mt-1 text-sm text-muted-foreground">{error}</p>
+              <p className="font-medium text-destructive">Failed to load marketplace home</p>
+              <p className="mt-1 text-sm text-slate-600">{error}</p>
               <Button className="mt-4" onClick={() => window.location.reload()}>
                 Retry
               </Button>
@@ -131,26 +80,49 @@ export default function HomePage() {
           </Card>
         ) : null}
 
-        <Section
+        <ListingSection
           type="car"
           title="Cars"
+          subtitle="Recently added"
           items={data?.cars.items ?? []}
           loading={loading}
         />
-        <Section
+        <ListingSection
           type="building"
           title="Buildings"
+          subtitle="Recently added"
           items={data?.buildings.items ?? []}
           loading={loading}
         />
-        <Section
+        <ListingSection
           type="land"
           title="Lands"
+          subtitle="Recently added"
           items={data?.lands.items ?? []}
           loading={loading}
         />
+
+        <section className="rounded-[1.75rem] border border-slate-200 bg-white px-6 py-8 shadow-sm sm:px-8">
+          <div className="mb-6 max-w-2xl space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Trust & safety</p>
+            <h2 className="text-2xl font-semibold tracking-tight text-slate-950">Marketplace protections that keep conversations focused and secure</h2>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            {TRUST_ITEMS.map((item) => {
+              const Icon = item.icon;
+              return (
+                <div key={item.title} className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5">
+                  <div className="grid h-11 w-11 place-items-center rounded-2xl bg-blue-50/70 text-blue-700 shadow-sm">
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <h3 className="mt-4 text-lg font-semibold text-slate-950">{item.title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">{item.description}</p>
+                </div>
+              );
+            })}
+          </div>
+        </section>
       </div>
     </PublicShell>
   );
 }
-

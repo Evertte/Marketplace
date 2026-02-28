@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
-import { ListingCard } from "@/src/components/site/listing-card";
+import { ListingCard } from "@/src/components/listings/ListingCard";
 import { PublicShell } from "@/src/components/site/public-shell";
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card";
@@ -205,9 +205,9 @@ export default function BrowseClientPage() {
               </CardContent>
             </Card>
           ) : loading ? (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-2 gap-4 xl:grid-cols-3">
               {Array.from({ length: 9 }).map((_, index) => (
-                <Skeleton key={index} className="h-80 w-full" />
+                <Skeleton key={index} className="aspect-[16/10] rounded-[1.75rem]" />
               ))}
             </div>
           ) : items.length === 0 ? (
@@ -221,7 +221,7 @@ export default function BrowseClientPage() {
             </Card>
           ) : (
             <>
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid grid-cols-2 gap-4 xl:grid-cols-3">
                 {items.map((item) => (
                   <ListingCard key={item.id} listing={item} />
                 ))}
