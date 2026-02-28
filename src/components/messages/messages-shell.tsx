@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { MapPin, MessageCircle, MoreHorizontal, RefreshCw, ShieldAlert, Trash2, UserRound } from "lucide-react";
+import { ArrowLeft, MapPin, MessageCircle, MoreHorizontal, RefreshCw, ShieldAlert, Trash2, UserRound } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
@@ -58,6 +58,7 @@ export function MessagesShell({
   const [openActionConversationId, setOpenActionConversationId] = useState<string | null>(null);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const archivedView = searchParams.get("archived") === "1";
+  const hasSelectedConversation = Boolean(selectedConversationId);
 
   function buildMessagesHref(conversationId?: string, nextArchived = archivedView): string {
     const basePath = conversationId ? `/messages/${conversationId}` : "/messages";
@@ -225,7 +226,7 @@ export function MessagesShell({
 
   return (
     <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
-      <Card className="overflow-hidden">
+      <Card className={`overflow-hidden ${hasSelectedConversation ? "hidden lg:block" : ""}`}>
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between gap-2">
             <div className="space-y-3">
@@ -445,11 +446,16 @@ export function MessagesShell({
         </CardContent>
       </Card>
 
-      <Card className="min-h-[70dvh]">
+      <Card className={`min-h-[70dvh] ${hasSelectedConversation ? "block" : "hidden lg:block"}`}>
         <CardHeader>
           {selectedItem ? (
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-start gap-3">
+                <Link href={buildMessagesHref(undefined, archivedView)} className="lg:hidden">
+                  <Button type="button" variant="ghost" size="icon" aria-label="Back to conversations">
+                    <ArrowLeft className="h-4 w-4" />
+                  </Button>
+                </Link>
                 <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border bg-muted">
                   {selectedItem.listing.coverImageUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
