@@ -12,7 +12,7 @@ export default function MessagesIndexPage() {
       subtitle="All your buyer/seller conversations live here. Open one to receive realtime updates."
     >
       <Suspense fallback={<div className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">Loading conversations...</div>}>
-        <MessagesShell autoSelectFirst />
+        <MessagesShell />
       </Suspense>
     </PublicShell>
   );

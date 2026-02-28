@@ -414,7 +414,7 @@ export function ConversationThread({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="mb-3 flex items-center justify-between">
+      <div className="sticky top-0 z-10 mb-3 flex items-center justify-between border-b bg-card/95 pb-3 backdrop-blur">
         <div className="flex items-center gap-2">
           {hasMoreOlder ? (
             <Button variant="outline" size="sm" onClick={() => void loadOlder()} disabled={loadingOlder}>
@@ -482,7 +482,7 @@ export function ConversationThread({
       </div>
 
       <form
-        className="mt-3 flex items-end gap-2"
+        className="sticky bottom-0 mt-3 flex items-end gap-2 border-t bg-background/95 pt-3 backdrop-blur"
         onSubmit={form.handleSubmit(async (values) => {
           await sendMessage(values);
         })}
