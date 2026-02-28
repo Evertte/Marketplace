@@ -11,6 +11,11 @@ const pool =
   globalForPrisma.pgPool ??
   new Pool({
     connectionString: process.env.DATABASE_URL,
+    // Vercel serverless can fan out many runtime instances. Keep each instance's
+    // pool tiny so we do not exhaust Supabase session pool connections.
+    max: 1,
+    idleTimeoutMillis: 20_000,
+    connectionTimeoutMillis: 10_000,
   });
 
 const adapter = new PrismaPg(pool);
