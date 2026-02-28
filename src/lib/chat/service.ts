@@ -68,6 +68,16 @@ type ConversationsListPage = {
   };
 };
 
+type ArchiveConversationResult = {
+  conversationId: string;
+  archivedAt: string | null;
+};
+
+type PurgeConversationResult = {
+  conversationId: string;
+  purged: true;
+};
+
 type ConversationMessageItem = {
   id: string;
   conversationId: string;
@@ -238,10 +248,14 @@ export async function listUserConversations(
   actor: ChatActor,
   query: ConversationsListQuery,
 ): Promise<ConversationsListPage> {
-  const roleFilter: Prisma.ConversationWhereInput =
-    actor.role === "admin"
-      ? { sellerUserId: actor.id }
-      : { buyerUserId: actor.id };
+  const roleFilter: Prisma.ConversationWhereInput = {
+    participants: {
+      some: {
+        userId: actor.id,
+        archivedAt: null,
+      },
+    },
+  };
 
   const cursorWhere = buildConversationCursorWhere(query.cursor);
 
@@ -562,4 +576,112 @@ export async function markConversationReadForUser(
   });
 
   return mapConversationReadState(state)!;
+}
+
+export async function archiveConversationForUser(
+  actor: ChatActor,
+  conversationId: string,
+): Promise<ArchiveConversationResult> {
+  const conversation = await getConversationMembership(conversationId);
+  assertConversationAccess(actor, conversation);
+
+  const archivedAt = new Date();
+  await prisma.conversationParticipant.upsert({
+    where: {
+      conversationId_userId: {
+        conversationId: conversation.id,
+        userId: actor.id,
+      },
+    },
+    create: {
+      conversationId: conversation.id,
+      userId: actor.id,
+      role: actor.id === conversation.buyerUserId ? "buyer" : "seller",
+      archivedAt,
+    },
+    update: {
+      archivedAt,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  return {
+    conversationId: conversation.id,
+    archivedAt: toIso(archivedAt),
+  };
+}
+
+export async function unarchiveConversationForUser(
+  actor: ChatActor,
+  conversationId: string,
+): Promise<ArchiveConversationResult> {
+  const conversation = await getConversationMembership(conversationId);
+  assertConversationAccess(actor, conversation);
+
+  await prisma.conversationParticipant.upsert({
+    where: {
+      conversationId_userId: {
+        conversationId: conversation.id,
+        userId: actor.id,
+      },
+    },
+    create: {
+      conversationId: conversation.id,
+      userId: actor.id,
+      role: actor.id === conversation.buyerUserId ? "buyer" : "seller",
+      archivedAt: null,
+    },
+    update: {
+      archivedAt: null,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  return {
+    conversationId: conversation.id,
+    archivedAt: null,
+  };
+}
+
+export async function purgeConversationAsAdmin(
+  actor: ChatActor,
+  conversationId: string,
+): Promise<PurgeConversationResult> {
+  if (actor.role !== "admin") {
+    throw new ApiError(403, "FORBIDDEN", "Admin access required");
+  }
+
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { id: true },
+  });
+
+  if (!conversation) {
+    throw new ApiError(404, "NOT_FOUND", "Conversation not found");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    // TODO: block purge when reports/disputes are added.
+    await tx.message.deleteMany({
+      where: { conversationId: conversation.id },
+    });
+    await tx.conversationReadState.deleteMany({
+      where: { conversationId: conversation.id },
+    });
+    await tx.conversationParticipant.deleteMany({
+      where: { conversationId: conversation.id },
+    });
+    await tx.conversation.delete({
+      where: { id: conversation.id },
+    });
+  });
+
+  return {
+    conversationId: conversation.id,
+    purged: true,
+  };
 }

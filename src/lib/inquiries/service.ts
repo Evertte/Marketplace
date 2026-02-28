@@ -99,6 +99,31 @@ async function getSingleActiveAdminUserId(tx: PrismaNamespace.TransactionClient)
   return admin.id;
 }
 
+async function ensureConversationParticipants(
+  tx: PrismaNamespace.TransactionClient,
+  args: {
+    conversationId: string;
+    buyerUserId: string;
+    sellerUserId: string;
+  },
+) {
+  await tx.conversationParticipant.createMany({
+    data: [
+      {
+        conversationId: args.conversationId,
+        userId: args.buyerUserId,
+        role: "buyer",
+      },
+      {
+        conversationId: args.conversationId,
+        userId: args.sellerUserId,
+        role: "seller",
+      },
+    ],
+    skipDuplicates: true,
+  });
+}
+
 export async function createInquiryAndAutoConversation(
   buyer: AuthenticatedBuyer,
   input: CreateInquiryInput,
@@ -186,6 +211,12 @@ export async function createInquiryAndAutoConversation(
     if (!conversation) {
       throw new ApiError(500, "INTERNAL_ERROR", "Failed to create or load conversation");
     }
+
+    await ensureConversationParticipants(tx, {
+      conversationId: conversation.id,
+      buyerUserId: buyer.id,
+      sellerUserId,
+    });
 
     const now = new Date();
 
@@ -326,4 +357,3 @@ export async function listAdminInquiries(
     },
   };
 }
-
