@@ -5,3 +5,30 @@ export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
 }
 
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: "$",
+  CEDIS: "₵",
+  GHS: "₵",
+  EUR: "€",
+  GBP: "£",
+};
+
+export function formatPrice(amount: string | number, currencyCode?: string): string {
+  const numeric = typeof amount === "number" ? amount : Number.parseFloat(amount);
+  const fallbackAmount = typeof amount === "string" ? amount : String(amount);
+
+  const formattedNumber = Number.isFinite(numeric)
+    ? new Intl.NumberFormat(undefined, {
+        maximumFractionDigits: numeric % 1 === 0 ? 0 : 2,
+      }).format(numeric)
+    : fallbackAmount;
+
+  if (!currencyCode) return formattedNumber;
+  const symbol = CURRENCY_SYMBOLS[currencyCode.toUpperCase()];
+  return symbol ? `${symbol}${formattedNumber}` : `${currencyCode} ${formattedNumber}`;
+}
+
+export function truncate(value: string, length: number): string {
+  if (value.length <= length) return value;
+  return `${value.slice(0, Math.max(length - 1, 0)).trimEnd()}…`;
+}
