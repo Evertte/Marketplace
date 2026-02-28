@@ -1,10 +1,18 @@
 export const CONVERSATION_MESSAGE_NEW_EVENT = "message:new";
+export const CONVERSATION_READ_UPDATED_EVENT = "read-updated";
 export const CONVERSATION_ACTIVITY_EVENT = "conversation:activity";
 
 export type ConversationMessageBroadcastPayload = {
   conversationId: string;
   messageId: string;
   createdAt: string;
+};
+
+export type ConversationReadStateBroadcastPayload = {
+  conversationId: string;
+  userId: string;
+  lastReadMessageId: string | null;
+  lastReadAt: string | null;
 };
 
 export type ConversationActivityDetail = {

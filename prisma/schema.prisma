@@ -69,6 +69,7 @@ model User {
   buyerChats      Conversation[]  @relation("ConversationBuyer")
   sellerChats     Conversation[]  @relation("ConversationSeller")
   sentMessages    Message[]
+  readStates      ConversationReadState[]
   auditLogEntries AdminAuditLog[]
 }
 
@@ -153,6 +154,7 @@ model Conversation {
   buyerUser     User      @relation("ConversationBuyer", fields: [buyerUserId], references: [id])
   sellerUser    User      @relation("ConversationSeller", fields: [sellerUserId], references: [id])
   messages      Message[]
+  readStates    ConversationReadState[]
 
   @@unique([buyerUserId, listingId])
 }
@@ -168,8 +170,26 @@ model Message {
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   senderUser     User         @relation(fields: [senderUserId], references: [id])
   media          Media?       @relation(fields: [mediaId], references: [id], onDelete: NoAction)
+  readByStates   ConversationReadState[] @relation("ConversationReadStateLastReadMessage")
 
   @@index([conversationId, createdAt(sort: Desc)])
+}
+
+model ConversationReadState {
+  id                String       @id @default(cuid())
+  conversationId    String       @db.Uuid
+  userId            String       @db.Uuid
+  lastReadMessageId String?      @db.Uuid
+  lastReadAt        DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadMessage   Message?     @relation("ConversationReadStateLastReadMessage", fields: [lastReadMessageId], references: [id], onDelete: SetNull)
+
+  @@unique([conversationId, userId])
+  @@index([conversationId, userId])
+  @@index([conversationId, lastReadAt])
 }
 
 model AdminAuditLog {
