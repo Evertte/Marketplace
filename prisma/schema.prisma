@@ -123,6 +123,8 @@ model Listing {
   listingMedia    ListingMedia[]
   inquiries       Inquiry[]
   conversations   Conversation[]
+  dailyMetrics    ListingDailyMetrics[]
+  dailyViewUniques ListingViewDailyUnique[]
 
   @@index([type, status, publishedAt(sort: Desc)])
   @@index([price])
@@ -290,6 +292,35 @@ model Notification {
 
   @@index([userId, readAt, createdAt])
   @@index([userId, createdAt])
+}
+
+model ListingDailyMetrics {
+  id                   String   @id @default(cuid())
+  listingId            String   @db.Uuid
+  date                 DateTime
+  viewsTotal           Int      @default(0)
+  viewsUnique          Int      @default(0)
+  inquiriesTotal       Int      @default(0)
+  conversationsStarted Int      @default(0)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  listing              Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@unique([listingId, date])
+  @@index([date])
+  @@index([listingId, date])
+}
+
+model ListingViewDailyUnique {
+  id          String   @id @default(cuid())
+  listingId   String   @db.Uuid
+  date        DateTime
+  visitorHash String
+  createdAt   DateTime @default(now())
+  listing     Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@unique([listingId, date, visitorHash])
+  @@index([listingId, date])
 }
 
 model AdminAuditLog {

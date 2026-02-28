@@ -26,4 +26,3 @@ export async function GET(req: NextRequest, context: RouteContext) {
     return errorResponseFromUnknown(req, error);
   }
 }
-

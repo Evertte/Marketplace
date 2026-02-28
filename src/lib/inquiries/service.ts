@@ -1,6 +1,7 @@
 import type { Inquiry, PreferredContact, User } from "@prisma/client";
 import { Prisma as PrismaNamespace } from "@prisma/client";
 
+import { incrementInquiryMetrics } from "../analytics/service";
 import { prisma } from "../db/prisma";
 import { ApiError } from "../http/errors";
 import {
@@ -245,6 +246,11 @@ export async function createInquiryAndAutoConversation(
       select: {
         id: true,
       },
+    });
+
+    await incrementInquiryMetrics(tx, {
+      listingId: listing.id,
+      conversationCreated: created,
     });
 
     return {

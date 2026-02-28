@@ -232,3 +232,39 @@ export type BanMutationResponse = {
     status: UserStatus;
   };
 };
+
+export type AdminAnalyticsOverviewResponse = {
+  data: {
+    totals: {
+      viewsTotal: number;
+      viewsUnique: number;
+      inquiriesTotal: number;
+      conversationsStarted: number;
+      conversionRate: number;
+    };
+    series: Array<{
+      date: string;
+      viewsTotal: number;
+      viewsUnique: number;
+      inquiriesTotal: number;
+      conversationsStarted: number;
+      conversionRate: number;
+    }>;
+  };
+};
+
+export type AdminAnalyticsListingsResponse = {
+  data: Array<{
+    listingId: string;
+    title: string;
+    type: ListingType;
+    region: string;
+    status: ListingStatus;
+    publishedAt: string | null;
+    viewsTotalSum: number;
+    viewsUniqueSum: number;
+    inquiriesTotalSum: number;
+    conversationsStartedSum: number;
+    conversionRate: number;
+  }>;
+};
