@@ -66,6 +66,15 @@ export type CreateInquiryResponse = {
   };
 };
 
+export type ConversationReadState = {
+  conversationId: string;
+  userId: string;
+  lastReadMessageId: string | null;
+  lastReadAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type ConversationsResponse = {
   data: Array<{
     conversation: {
@@ -77,6 +86,8 @@ export type ConversationsResponse = {
       createdAt: string;
       updatedAt: string;
     };
+    hasUnread: boolean;
+    lastMessagePreview: string | null;
     listing: {
       id: string;
       type: ListingType;
@@ -120,6 +131,10 @@ export type ConversationMessagesResponse = {
     next_cursor: string | null;
     has_more: boolean;
   };
+  readState: {
+    me: ConversationReadState | null;
+    other: ConversationReadState | null;
+  };
 };
 
 export type SendMessageResponse = {
@@ -129,3 +144,6 @@ export type SendMessageResponse = {
   };
 };
 
+export type MarkConversationReadResponse = {
+  data: ConversationReadState;
+};

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { MessageCircle, RefreshCw } from "lucide-react";
+import { MapPin, MessageCircle, RefreshCw, UserRound } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
@@ -21,6 +21,17 @@ type ConversationItem = ConversationsResponse["data"][number];
 function formatActivity(item: ConversationItem): string {
   const stamp = item.conversation.lastMessageAt ?? item.conversation.createdAt;
   return new Date(stamp).toLocaleString();
+}
+
+function getParticipantLabel(
+  item: ConversationItem,
+  role: "admin" | "user" | undefined,
+): string {
+  if (role === "admin") {
+    return item.buyer.email;
+  }
+
+  return "Marketplace Admin";
 }
 
 export function MessagesShell({
@@ -173,6 +184,7 @@ export function MessagesShell({
                 {items.map((item) => {
                   const active = item.conversation.id === selectedConversationId;
                   const href = `/messages/${item.conversation.id}`;
+                  const participantLabel = getParticipantLabel(item, user?.role);
                   return (
                     <Link
                       key={item.conversation.id}
@@ -181,20 +193,57 @@ export function MessagesShell({
                         active ? "border-primary bg-primary/5" : "hover:bg-muted/20"
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="line-clamp-1 font-medium">{item.listing.title}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {item.listing.locationCity}, {item.listing.locationRegion}
-                          </p>
+                      <div className="flex items-start gap-3">
+                        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border bg-muted">
+                          {item.listing.coverImageUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={item.listing.coverImageUrl}
+                              alt={item.listing.title}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="grid h-full place-items-center text-[11px] text-muted-foreground">
+                              No image
+                            </div>
+                          )}
                         </div>
-                        <Badge variant="muted">{item.listing.type}</Badge>
-                      </div>
-                      <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-                        <span>
-                          {item.listing.currency} {item.listing.price}
-                        </span>
-                        <span>{formatActivity(item)}</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <p className="line-clamp-1 font-medium">{item.listing.title}</p>
+                                {item.hasUnread ? (
+                                  <span
+                                    className="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-primary"
+                                    aria-label="Unread conversation"
+                                    title="Unread conversation"
+                                  />
+                                ) : null}
+                              </div>
+                              <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                                <UserRound className="h-3.5 w-3.5" />
+                                <span className="line-clamp-1">{participantLabel}</span>
+                              </p>
+                            </div>
+                            <Badge variant="muted">{item.listing.type}</Badge>
+                          </div>
+                          <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+                            <MapPin className="h-3.5 w-3.5" />
+                            <span className="line-clamp-1">
+                              {item.listing.locationCity}, {item.listing.locationRegion}
+                            </span>
+                          </p>
+                          <p className="mt-2 line-clamp-1 text-sm text-muted-foreground">
+                            {item.lastMessagePreview ?? "No messages yet"}
+                          </p>
+                          <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                            <span>
+                              {item.listing.currency} {item.listing.price}
+                            </span>
+                            <span>{formatActivity(item)}</span>
+                          </div>
+                        </div>
                       </div>
                     </Link>
                   );
@@ -232,13 +281,33 @@ export function MessagesShell({
       <Card className="min-h-[70dvh]">
         <CardHeader>
           {selectedItem ? (
-            <>
-              <CardTitle className="line-clamp-1">{selectedItem.listing.title}</CardTitle>
-              <CardDescription>
-                {selectedItem.listing.locationCity}, {selectedItem.listing.locationRegion} •{" "}
-                {selectedItem.listing.currency} {selectedItem.listing.price}
-              </CardDescription>
-            </>
+            <div className="flex items-start gap-3">
+              <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border bg-muted">
+                {selectedItem.listing.coverImageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={selectedItem.listing.coverImageUrl}
+                    alt={selectedItem.listing.title}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="grid h-full place-items-center text-[11px] text-muted-foreground">
+                    No image
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0">
+                <CardTitle className="line-clamp-1">{selectedItem.listing.title}</CardTitle>
+                <CardDescription className="mt-1 flex items-center gap-1">
+                  <UserRound className="h-3.5 w-3.5" />
+                  <span>{getParticipantLabel(selectedItem, user?.role)}</span>
+                </CardDescription>
+                <CardDescription className="mt-1">
+                  {selectedItem.listing.locationCity}, {selectedItem.listing.locationRegion} •{" "}
+                  {selectedItem.listing.currency} {selectedItem.listing.price}
+                </CardDescription>
+              </div>
+            </div>
           ) : (
             <>
               <CardTitle>Select a conversation</CardTitle>

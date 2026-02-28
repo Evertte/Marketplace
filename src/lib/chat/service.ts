@@ -21,6 +21,15 @@ import type {
 
 type ChatActor = Pick<User, "id" | "role" | "status">;
 
+type ConversationReadStateDto = {
+  conversationId: string;
+  userId: string;
+  lastReadMessageId: string | null;
+  lastReadAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type ConversationListItem = {
   conversation: {
     id: string;
@@ -31,6 +40,8 @@ type ConversationListItem = {
     createdAt: string;
     updatedAt: string;
   };
+  hasUnread: boolean;
+  lastMessagePreview: string | null;
   listing: {
     id: string;
     type: ListingType;
@@ -79,6 +90,10 @@ type ConversationMessagesPage = {
     next_cursor: string | null;
     has_more: boolean;
   };
+  readState: {
+    me: ConversationReadStateDto | null;
+    other: ConversationReadStateDto | null;
+  };
 };
 
 type CreateConversationMessageResult = {
@@ -92,6 +107,44 @@ function toIso(value: Date): string {
 
 function decimalToString(value: Prisma.Decimal): string {
   return value.toString();
+}
+
+function buildLastMessagePreview(message: {
+  kind: MessageKind;
+  text: string | null;
+} | null): string | null {
+  if (!message) return null;
+
+  if (message.kind === "media") {
+    return "Media attachment";
+  }
+
+  const text = message.text?.trim();
+  if (!text) return null;
+  if (text.length <= 100) return text;
+  return `${text.slice(0, 97)}...`;
+}
+
+function mapConversationReadState(
+  state: {
+    conversationId: string;
+    userId: string;
+    lastReadMessageId: string | null;
+    lastReadAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+  } | null,
+): ConversationReadStateDto | null {
+  if (!state) return null;
+
+  return {
+    conversationId: state.conversationId,
+    userId: state.userId,
+    lastReadMessageId: state.lastReadMessageId ?? null,
+    lastReadAt: state.lastReadAt ? toIso(state.lastReadAt) : null,
+    createdAt: toIso(state.createdAt),
+    updatedAt: toIso(state.updatedAt),
+  };
 }
 
 type ConversationMembership = {
@@ -208,6 +261,28 @@ export async function listUserConversations(
       lastMessageAt: true,
       createdAt: true,
       updatedAt: true,
+      messages: {
+        take: 1,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        select: {
+          id: true,
+          createdAt: true,
+          kind: true,
+          text: true,
+        },
+      },
+      readStates: {
+        where: { userId: actor.id },
+        take: 1,
+        select: {
+          conversationId: true,
+          userId: true,
+          lastReadMessageId: true,
+          lastReadAt: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      },
       buyerUser: {
         select: {
           id: true,
@@ -246,6 +321,15 @@ export async function listUserConversations(
 
   return {
     data: slice.map((row) => ({
+      ...(() => {
+        const latestMessageAt = row.messages[0]?.createdAt ?? row.lastMessageAt ?? null;
+        const myReadState = row.readStates[0] ?? null;
+        const hasUnread =
+          latestMessageAt !== null &&
+          (myReadState?.lastReadAt == null || latestMessageAt > myReadState.lastReadAt);
+
+        return { hasUnread };
+      })(),
       conversation: {
         id: row.id,
         listingId: row.listingId,
@@ -255,6 +339,7 @@ export async function listUserConversations(
         createdAt: toIso(row.createdAt),
         updatedAt: toIso(row.updatedAt),
       },
+      lastMessagePreview: buildLastMessagePreview(row.messages[0] ?? null),
       listing: {
         id: row.listing.id,
         type: row.listing.type,
@@ -314,33 +399,54 @@ export async function listConversationMessagesForUser(
   assertConversationAccess(actor, conversation);
 
   const cursorWhere = buildMessagesCursorWhere(query.cursor);
-  const rows = await prisma.message.findMany({
-    where: cursorWhere
-      ? { AND: [{ conversationId: conversation.id }, cursorWhere] }
-      : { conversationId: conversation.id },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: query.limit + 1,
-    select: {
-      id: true,
-      conversationId: true,
-      senderUserId: true,
-      kind: true,
-      text: true,
-      createdAt: true,
-      media: {
-        select: {
-          id: true,
-          url: true,
-          thumbUrl: true,
-          kind: true,
+  const [rows, readStates] = await prisma.$transaction([
+    prisma.message.findMany({
+      where: cursorWhere
+        ? { AND: [{ conversationId: conversation.id }, cursorWhere] }
+        : { conversationId: conversation.id },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: query.limit + 1,
+      select: {
+        id: true,
+        conversationId: true,
+        senderUserId: true,
+        kind: true,
+        text: true,
+        createdAt: true,
+        media: {
+          select: {
+            id: true,
+            url: true,
+            thumbUrl: true,
+            kind: true,
+          },
         },
       },
-    },
-  });
+    }),
+    prisma.conversationReadState.findMany({
+      where: {
+        conversationId: conversation.id,
+        userId: {
+          in: [conversation.buyerUserId, conversation.sellerUserId],
+        },
+      },
+      select: {
+        conversationId: true,
+        userId: true,
+        lastReadMessageId: true,
+        lastReadAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    }),
+  ]);
 
   const hasMore = rows.length > query.limit;
   const slice = hasMore ? rows.slice(0, query.limit) : rows;
   const nextCursor = hasMore ? buildMessagesNextCursor(slice[slice.length - 1]!) : null;
+  const myReadState = readStates.find((state) => state.userId === actor.id) ?? null;
+  const otherReadState =
+    readStates.find((state) => state.userId !== actor.id) ?? null;
 
   return {
     data: slice.map((row) => ({
@@ -363,6 +469,10 @@ export async function listConversationMessagesForUser(
       limit: query.limit,
       next_cursor: nextCursor,
       has_more: hasMore,
+    },
+    readState: {
+      me: mapConversationReadState(myReadState),
+      other: mapConversationReadState(otherReadState),
     },
   };
 }
@@ -406,4 +516,50 @@ export async function createConversationTextMessageForUser(
     message_id: created.id,
     createdAt: toIso(created.createdAt),
   };
+}
+
+export async function markConversationReadForUser(
+  actor: ChatActor,
+  conversationId: string,
+): Promise<ConversationReadStateDto> {
+  const conversation = await getConversationMembership(conversationId);
+  assertConversationAccess(actor, conversation);
+
+  const latestMessage = await prisma.message.findFirst({
+    where: { conversationId: conversation.id },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: {
+      id: true,
+    },
+  });
+
+  const now = new Date();
+  const state = await prisma.conversationReadState.upsert({
+    where: {
+      conversationId_userId: {
+        conversationId: conversation.id,
+        userId: actor.id,
+      },
+    },
+    create: {
+      conversationId: conversation.id,
+      userId: actor.id,
+      lastReadMessageId: latestMessage?.id ?? null,
+      lastReadAt: now,
+    },
+    update: {
+      lastReadMessageId: latestMessage?.id ?? null,
+      lastReadAt: now,
+    },
+    select: {
+      conversationId: true,
+      userId: true,
+      lastReadMessageId: true,
+      lastReadAt: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+
+  return mapConversationReadState(state)!;
 }

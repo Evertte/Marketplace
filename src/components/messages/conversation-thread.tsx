@@ -17,11 +17,18 @@ import { authApiJson, ClientApiError } from "@/src/lib/api/client";
 import { useUserAuth } from "@/src/lib/auth/user-auth";
 import {
   CONVERSATION_MESSAGE_NEW_EVENT,
+  CONVERSATION_READ_UPDATED_EVENT,
   emitConversationActivity,
   getConversationRealtimeTopic,
   type ConversationMessageBroadcastPayload,
+  type ConversationReadStateBroadcastPayload,
 } from "@/src/lib/chat/realtime";
-import type { ConversationMessagesResponse, SendMessageResponse } from "@/src/lib/client/types";
+import type {
+  ConversationMessagesResponse,
+  ConversationReadState,
+  MarkConversationReadResponse,
+  SendMessageResponse,
+} from "@/src/lib/client/types";
 import { getSupabaseBrowser } from "@/src/lib/supabase/browser";
 
 type MessageItem = ConversationMessagesResponse["data"][number];
@@ -60,13 +67,27 @@ export function ConversationThread({
   const [olderCursor, setOlderCursor] = useState<string | null>(null);
   const [hasMoreOlder, setHasMoreOlder] = useState(false);
   const [connectionState, setConnectionState] = useState<"idle" | "connected" | "reconnecting" | "error">("idle");
+  const [myReadState, setMyReadState] = useState<ConversationReadState | null>(null);
+  const [otherReadState, setOtherReadState] = useState<ConversationReadState | null>(null);
+  const [isDocumentVisible, setIsDocumentVisible] = useState(
+    typeof document === "undefined" ? true : document.visibilityState === "visible",
+  );
   const endRef = useRef<HTMLDivElement | null>(null);
   const lastMessageCountRef = useRef(0);
+  const readDebounceRef = useRef<number | null>(null);
+  const lastRequestedReadMessageIdRef = useRef<string | null>(null);
 
   const form = useForm<MessageComposerValues>({
     resolver: zodResolver(messageComposerSchema),
     defaultValues: { text: "" },
   });
+
+  function syncReadState(
+    response: Pick<ConversationMessagesResponse, "readState">,
+  ) {
+    setMyReadState(response.readState.me);
+    setOtherReadState(response.readState.other);
+  }
 
   async function fetchLatest() {
     const response = await authApiJson<ConversationMessagesResponse>(
@@ -74,6 +95,7 @@ export function ConversationThread({
     );
     const latestAsc = sortMessagesAsc(response.data);
     setMessages((prev) => (prev.length === 0 ? latestAsc : mergeMessages(prev, latestAsc)));
+    syncReadState(response);
     setError(null);
     if (messages.length === 0) {
       setOlderCursor(response.page.next_cursor);
@@ -88,6 +110,7 @@ export function ConversationThread({
         `/api/v1/conversations/${conversationId}/messages?limit=30`,
       );
       setMessages(sortMessagesAsc(response.data));
+      syncReadState(response);
       setOlderCursor(response.page.next_cursor);
       setHasMoreOlder(response.page.has_more);
       setError(null);
@@ -103,9 +126,22 @@ export function ConversationThread({
     setOlderCursor(null);
     setHasMoreOlder(false);
     setError(null);
+    setMyReadState(null);
+    setOtherReadState(null);
+    lastRequestedReadMessageIdRef.current = null;
     void initialLoad();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
+
+  useEffect(() => {
+    function handleVisibilityChange() {
+      setIsDocumentVisible(document.visibilityState === "visible");
+    }
+
+    handleVisibilityChange();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
 
   useEffect(() => {
     const accessToken = session?.access_token;
@@ -136,6 +172,35 @@ export function ConversationThread({
 
             emitConversationActivity(conversationId);
             void fetchLatest().catch(() => {});
+          },
+        );
+        channel.on(
+          "broadcast",
+          { event: CONVERSATION_READ_UPDATED_EVENT },
+          (payload) => {
+            const data = payload.payload as ConversationReadStateBroadcastPayload;
+            if (data.conversationId !== conversationId) return;
+
+            if (data.userId === user?.id) {
+              setMyReadState((current) => ({
+                conversationId: data.conversationId,
+                userId: data.userId,
+                lastReadMessageId: data.lastReadMessageId,
+                lastReadAt: data.lastReadAt,
+                createdAt: current?.createdAt ?? data.lastReadAt ?? new Date().toISOString(),
+                updatedAt: data.lastReadAt ?? new Date().toISOString(),
+              }));
+              lastRequestedReadMessageIdRef.current = data.lastReadMessageId;
+            } else {
+              setOtherReadState((current) => ({
+                conversationId: data.conversationId,
+                userId: data.userId,
+                lastReadMessageId: data.lastReadMessageId,
+                lastReadAt: data.lastReadAt,
+                createdAt: current?.createdAt ?? data.lastReadAt ?? new Date().toISOString(),
+                updatedAt: data.lastReadAt ?? new Date().toISOString(),
+              }));
+            }
           },
         );
 
@@ -173,7 +238,7 @@ export function ConversationThread({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId, session?.access_token]);
+  }, [conversationId, session?.access_token, user?.id]);
 
   useEffect(() => {
     if (messages.length > lastMessageCountRef.current) {
@@ -182,12 +247,77 @@ export function ConversationThread({
     lastMessageCountRef.current = messages.length;
   }, [messages]);
 
+  const latestMessage = useMemo(
+    () => (messages.length > 0 ? messages[messages.length - 1]! : null),
+    [messages],
+  );
+  const lastOutgoingMessageId = useMemo(() => {
+    if (!user) return null;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index]!.senderUserId === user.id) {
+        return messages[index]!.id;
+      }
+    }
+    return null;
+  }, [messages, user]);
+
   const prettyError = useMemo(() => {
     if (!error) return null;
     if (error.status === 403) return "You do not have access to this conversation.";
     if (error.status === 404) return "Conversation not found.";
     return error.message;
   }, [error]);
+
+  function hasOtherSeenMessage(message: MessageItem): boolean {
+    if (!otherReadState) return false;
+    if (otherReadState.lastReadMessageId === message.id) return true;
+    if (otherReadState.lastReadAt && otherReadState.lastReadAt >= message.createdAt) return true;
+    return false;
+  }
+
+  async function markConversationRead(targetMessageId: string) {
+    if (lastRequestedReadMessageIdRef.current === targetMessageId) return;
+    if (myReadState?.lastReadMessageId === targetMessageId) return;
+
+    lastRequestedReadMessageIdRef.current = targetMessageId;
+
+    try {
+      const response = await authApiJson<MarkConversationReadResponse>(
+        `/api/v1/conversations/${conversationId}/read`,
+        { method: "POST" },
+      );
+      setMyReadState(response.data);
+      lastRequestedReadMessageIdRef.current = response.data.lastReadMessageId;
+      emitConversationActivity(conversationId);
+    } catch (err) {
+      lastRequestedReadMessageIdRef.current = null;
+      if (err instanceof ClientApiError && (err.status === 403 || err.status === 404)) {
+        return;
+      }
+      console.error("Failed to mark conversation as read", err);
+    }
+  }
+
+  useEffect(() => {
+    if (!isDocumentVisible) return;
+    if (!latestMessage) return;
+    if (myReadState?.lastReadMessageId === latestMessage.id) return;
+
+    if (readDebounceRef.current) {
+      window.clearTimeout(readDebounceRef.current);
+    }
+
+    readDebounceRef.current = window.setTimeout(() => {
+      void markConversationRead(latestMessage.id);
+    }, 1000);
+
+    return () => {
+      if (readDebounceRef.current) {
+        window.clearTimeout(readDebounceRef.current);
+        readDebounceRef.current = null;
+      }
+    };
+  }, [conversationId, isDocumentVisible, latestMessage?.id, myReadState?.lastReadMessageId]);
 
   async function loadOlder() {
     if (!olderCursor) return;
@@ -197,6 +327,7 @@ export function ConversationThread({
         `/api/v1/conversations/${conversationId}/messages?limit=30&cursor=${encodeURIComponent(olderCursor)}`,
       );
       setMessages((prev) => mergeMessages(prev, sortMessagesAsc(response.data)));
+      syncReadState(response);
       setOlderCursor(response.page.next_cursor);
       setHasMoreOlder(response.page.has_more);
     } catch (err) {
@@ -337,6 +468,11 @@ export function ConversationThread({
                   >
                     {new Date(message.createdAt).toLocaleString()}
                   </p>
+                  {mine && message.id === lastOutgoingMessageId && hasOtherSeenMessage(message) ? (
+                    <p className="mt-1 text-[11px] text-primary-foreground/80">
+                      Seen
+                    </p>
+                  ) : null}
                 </div>
               </div>
             );

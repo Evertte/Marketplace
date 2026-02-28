@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { requireAuth } from "../../../../../../src/lib/auth/requireAuth";
-import {
-  CONVERSATION_MESSAGE_NEW_EVENT,
-  getConversationRealtimeTopic,
-} from "../../../../../../src/lib/chat/realtime";
+import { broadcastConversationMessageCreated } from "../../../../../../src/lib/chat/broadcast";
 import { listConversationMessagesForUser, createConversationTextMessageForUser } from "../../../../../../src/lib/chat/service";
 import {
   parseConversationIdParam,
@@ -13,7 +10,6 @@ import {
 } from "../../../../../../src/lib/chat/validators";
 import { errorResponseFromUnknown } from "../../../../../../src/lib/http/errors";
 import { readJsonObjectBody } from "../../../../../../src/lib/listings/admin";
-import { getSupabaseAdmin } from "../../../../../../src/lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -22,30 +18,6 @@ type RouteContext = {
     id: string;
   };
 };
-
-async function broadcastMessageCreated(args: {
-  conversationId: string;
-  messageId: string;
-  createdAt: string;
-}) {
-  try {
-    const supabase = getSupabaseAdmin();
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-
-    if (!serviceRoleKey) {
-      throw new Error("SUPABASE_SERVICE_ROLE_KEY is not configured");
-    }
-
-    await supabase.realtime.setAuth(serviceRoleKey);
-    const channel = supabase.channel(getConversationRealtimeTopic(args.conversationId), {
-      config: { private: true },
-    });
-    await channel.httpSend(CONVERSATION_MESSAGE_NEW_EVENT, args);
-    void supabase.removeChannel(channel);
-  } catch (error) {
-    console.error("Failed to broadcast new message", error);
-  }
-}
 
 export async function GET(req: NextRequest, context: RouteContext) {
   try {
@@ -66,7 +38,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
     const body = await readJsonObjectBody(req, { code: "INVALID_INPUT" });
     const input = parseCreateTextMessageInput(body);
     const result = await createConversationTextMessageForUser(user, conversationId, input);
-    await broadcastMessageCreated({
+    await broadcastConversationMessageCreated({
       conversationId,
       messageId: result.message_id,
       createdAt: result.createdAt,
