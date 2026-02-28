@@ -55,23 +55,42 @@ enum MessageKind {
   media
 }
 
+enum ReportReason {
+  spam
+  scam
+  harassment
+  inappropriate
+  other
+}
+
+enum ReportStatus {
+  open
+  reviewing
+  resolved
+  dismissed
+}
+
 model User {
-  id              String          @id @default(uuid()) @db.Uuid
-  authUserId      String          @unique @db.Uuid
-  email           String          @unique
-  role            UserRole
-  status          UserStatus
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  listings        Listing[]
-  media           Media[]
-  inquiries       Inquiry[]
-  buyerChats      Conversation[]  @relation("ConversationBuyer")
-  sellerChats     Conversation[]  @relation("ConversationSeller")
-  sentMessages    Message[]
-  readStates      ConversationReadState[]
+  id                       String                    @id @default(uuid()) @db.Uuid
+  authUserId               String                    @unique @db.Uuid
+  email                    String                    @unique
+  role                     UserRole
+  status                   UserStatus
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+  listings                 Listing[]
+  media                    Media[]
+  inquiries                Inquiry[]
+  buyerChats               Conversation[]            @relation("ConversationBuyer")
+  sellerChats              Conversation[]            @relation("ConversationSeller")
+  sentMessages             Message[]
+  reportsFiled             Report[]                  @relation("ReportReporter")
+  reportsReceived          Report[]                  @relation("ReportReported")
+  bansReceived             Ban[]                     @relation("BanUser")
+  bansIssued               Ban[]                     @relation("BanAdmin")
+  readStates               ConversationReadState[]
   conversationParticipants ConversationParticipant[]
-  auditLogEntries AdminAuditLog[]
+  auditLogEntries          AdminAuditLog[]
 }
 
 model Listing {
@@ -155,6 +174,7 @@ model Conversation {
   buyerUser     User      @relation("ConversationBuyer", fields: [buyerUserId], references: [id])
   sellerUser    User      @relation("ConversationSeller", fields: [sellerUserId], references: [id])
   messages      Message[]
+  reports       Report[]
   readStates    ConversationReadState[]
   participants  ConversationParticipant[]
 
@@ -172,6 +192,7 @@ model Message {
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   senderUser     User         @relation(fields: [senderUserId], references: [id])
   media          Media?       @relation(fields: [mediaId], references: [id], onDelete: NoAction)
+  reports        Report[]
   readByStates   ConversationReadState[] @relation("ConversationReadStateLastReadMessage")
 
   @@index([conversationId, createdAt(sort: Desc)])
@@ -208,6 +229,41 @@ model ConversationParticipant {
   @@unique([conversationId, userId])
   @@index([userId, archivedAt])
   @@index([conversationId])
+}
+
+model Report {
+  id             String       @id @default(cuid())
+  reporterUserId String       @db.Uuid
+  reportedUserId String       @db.Uuid
+  conversationId String       @db.Uuid
+  messageId      String?      @db.Uuid
+  reason         ReportReason
+  note           String?
+  adminNote      String?
+  status         ReportStatus @default(open)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  reporterUser   User         @relation("ReportReporter", fields: [reporterUserId], references: [id], onDelete: Cascade)
+  reportedUser   User         @relation("ReportReported", fields: [reportedUserId], references: [id], onDelete: Cascade)
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  message        Message?     @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([reportedUserId, status])
+  @@index([conversationId])
+}
+
+model Ban {
+  id              String   @id @default(cuid())
+  userId          String   @db.Uuid
+  bannedByAdminId String   @db.Uuid
+  reason          String?
+  createdAt       DateTime @default(now())
+  liftedAt        DateTime?
+  user            User     @relation("BanUser", fields: [userId], references: [id], onDelete: Cascade)
+  bannedByAdmin   User     @relation("BanAdmin", fields: [bannedByAdminId], references: [id], onDelete: Cascade)
+
+  @@index([userId, liftedAt])
 }
 
 model AdminAuditLog {

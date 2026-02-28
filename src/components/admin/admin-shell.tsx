@@ -33,6 +33,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/listings", label: "Listings", icon: ListChecks },
   { href: "/admin/listings/new", label: "New Listing", icon: PlusSquare },
+  { href: "/admin/reports", label: "Reports", icon: ShieldAlert },
 ];
 
 function FullScreenLoading() {
@@ -182,7 +183,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           <header className="mb-4 flex items-center justify-between rounded-2xl border bg-card px-4 py-3 shadow-panel">
             <div>
               <p className="text-sm text-muted-foreground">Admin Console</p>
-              <p className="font-medium">Manage listings and media</p>
+              <p className="font-medium">Manage listings, moderation, and media</p>
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Link

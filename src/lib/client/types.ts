@@ -147,3 +147,13 @@ export type SendMessageResponse = {
 export type MarkConversationReadResponse = {
   data: ConversationReadState;
 };
+
+export type ReportReason = "spam" | "scam" | "harassment" | "inappropriate" | "other";
+export type ReportStatus = "open" | "reviewing" | "resolved" | "dismissed";
+
+export type CreateReportResponse = {
+  data: {
+    id: string;
+    status: ReportStatus;
+  };
+};

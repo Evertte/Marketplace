@@ -9,7 +9,7 @@ import {
 } from "./cursor";
 import type { AdminInquiriesQuery, CreateInquiryInput } from "./validators";
 
-type AuthenticatedBuyer = Pick<User, "id">;
+type AuthenticatedBuyer = Pick<User, "id" | "status">;
 type AdminActor = Pick<User, "id" | "role" | "status">;
 
 type CreateInquiryResult = {
@@ -128,6 +128,10 @@ export async function createInquiryAndAutoConversation(
   buyer: AuthenticatedBuyer,
   input: CreateInquiryInput,
 ): Promise<CreateInquiryResult> {
+  if (buyer.status === "banned") {
+    throw new ApiError(403, "USER_BANNED", "User account is banned");
+  }
+
   return prisma.$transaction(async (tx) => {
     const listing = await tx.listing.findFirst({
       where: {

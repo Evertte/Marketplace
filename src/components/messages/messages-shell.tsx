@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { MapPin, MessageCircle, MoreHorizontal, RefreshCw, Trash2, UserRound } from "lucide-react";
+import { MapPin, MessageCircle, MoreHorizontal, RefreshCw, ShieldAlert, Trash2, UserRound } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
@@ -11,6 +11,7 @@ import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card";
 import { Skeleton } from "@/src/components/ui/skeleton";
+import { ConversationReportModal } from "@/src/components/messages/conversation-report-modal";
 import { authApiJson, ClientApiError } from "@/src/lib/api/client";
 import { useUserAuth } from "@/src/lib/auth/user-auth";
 import { CONVERSATION_ACTIVITY_EVENT, type ConversationActivityDetail } from "@/src/lib/chat/realtime";
@@ -55,6 +56,7 @@ export function MessagesShell({
   const [loadingMore, setLoadingMore] = useState(false);
   const [archivingConversationId, setArchivingConversationId] = useState<string | null>(null);
   const [openActionConversationId, setOpenActionConversationId] = useState<string | null>(null);
+  const [reportModalOpen, setReportModalOpen] = useState(false);
   const archivedView = searchParams.get("archived") === "1";
 
   function buildMessagesHref(conversationId?: string, nextArchived = archivedView): string {
@@ -446,32 +448,38 @@ export function MessagesShell({
       <Card className="min-h-[70dvh]">
         <CardHeader>
           {selectedItem ? (
-            <div className="flex items-start gap-3">
-              <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border bg-muted">
-                {selectedItem.listing.coverImageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={selectedItem.listing.coverImageUrl}
-                    alt={selectedItem.listing.title}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <div className="grid h-full place-items-center text-[11px] text-muted-foreground">
-                    No image
-                  </div>
-                )}
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border bg-muted">
+                  {selectedItem.listing.coverImageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={selectedItem.listing.coverImageUrl}
+                      alt={selectedItem.listing.title}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="grid h-full place-items-center text-[11px] text-muted-foreground">
+                      No image
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <CardTitle className="line-clamp-1">{selectedItem.listing.title}</CardTitle>
+                  <CardDescription className="mt-1 flex items-center gap-1">
+                    <UserRound className="h-3.5 w-3.5" />
+                    <span>{getParticipantLabel(selectedItem, user?.role)}</span>
+                  </CardDescription>
+                  <CardDescription className="mt-1">
+                    {selectedItem.listing.locationCity}, {selectedItem.listing.locationRegion} •{" "}
+                    {selectedItem.listing.currency} {selectedItem.listing.price}
+                  </CardDescription>
+                </div>
               </div>
-              <div className="min-w-0">
-                <CardTitle className="line-clamp-1">{selectedItem.listing.title}</CardTitle>
-                <CardDescription className="mt-1 flex items-center gap-1">
-                  <UserRound className="h-3.5 w-3.5" />
-                  <span>{getParticipantLabel(selectedItem, user?.role)}</span>
-                </CardDescription>
-                <CardDescription className="mt-1">
-                  {selectedItem.listing.locationCity}, {selectedItem.listing.locationRegion} •{" "}
-                  {selectedItem.listing.currency} {selectedItem.listing.price}
-                </CardDescription>
-              </div>
+              <Button type="button" variant="outline" size="sm" onClick={() => setReportModalOpen(true)}>
+                <ShieldAlert className="h-4 w-4" />
+                Report
+              </Button>
             </div>
           ) : (
             <>
@@ -493,6 +501,14 @@ export function MessagesShell({
           )}
         </CardContent>
       </Card>
+      {selectedItem ? (
+        <ConversationReportModal
+          open={reportModalOpen}
+          conversationId={selectedItem.conversation.id}
+          listingTitle={selectedItem.listing.title}
+          onClose={() => setReportModalOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

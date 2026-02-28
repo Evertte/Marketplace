@@ -191,6 +191,12 @@ function assertConversationAccess(
   }
 }
 
+function assertActiveActor(actor: ChatActor): void {
+  if (actor.status === "banned") {
+    throw new ApiError(403, "USER_BANNED", "User account is banned");
+  }
+}
+
 function buildConversationCursorWhere(
   cursor: ConversationsCursor | undefined,
 ): Prisma.ConversationWhereInput | undefined {
@@ -496,6 +502,7 @@ export async function createConversationTextMessageForUser(
   conversationId: string,
   input: CreateTextMessageInput,
 ): Promise<CreateConversationMessageResult> {
+  assertActiveActor(actor);
   const conversation = await getConversationMembership(conversationId);
   assertConversationAccess(actor, conversation);
 
