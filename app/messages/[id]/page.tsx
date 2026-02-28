@@ -12,7 +12,7 @@ export default function MessagesConversationPage({
   return (
     <PublicShell
       title="Messages"
-      subtitle="Polling-based chat (V1). No realtime sockets yet."
+      subtitle="Live conversation updates with persisted message history."
     >
       <MessagesShell selectedConversationId={params.id}>
         <ConversationThread conversationId={params.id} />
@@ -20,4 +20,3 @@ export default function MessagesConversationPage({
     </PublicShell>
   );
 }
-

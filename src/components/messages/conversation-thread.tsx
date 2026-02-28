@@ -1,19 +1,28 @@
 "use client";
 
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, Send } from "lucide-react";
+import { Loader2, RefreshCw, Send } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 
+import { Badge } from "@/src/components/ui/badge";
 import { Button } from "@/src/components/ui/button";
 import { Card, CardContent } from "@/src/components/ui/card";
 import { Skeleton } from "@/src/components/ui/skeleton";
 import { Textarea } from "@/src/components/ui/textarea";
 import { authApiJson, ClientApiError } from "@/src/lib/api/client";
 import { useUserAuth } from "@/src/lib/auth/user-auth";
+import {
+  CONVERSATION_MESSAGE_NEW_EVENT,
+  emitConversationActivity,
+  getConversationRealtimeTopic,
+  type ConversationMessageBroadcastPayload,
+} from "@/src/lib/chat/realtime";
 import type { ConversationMessagesResponse, SendMessageResponse } from "@/src/lib/client/types";
+import { getSupabaseBrowser } from "@/src/lib/supabase/browser";
 
 type MessageItem = ConversationMessagesResponse["data"][number];
 
@@ -42,7 +51,7 @@ export function ConversationThread({
 }: {
   conversationId: string;
 }) {
-  const { user } = useUserAuth();
+  const { session, user } = useUserAuth();
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -50,6 +59,7 @@ export function ConversationThread({
   const [error, setError] = useState<ClientApiError | null>(null);
   const [olderCursor, setOlderCursor] = useState<string | null>(null);
   const [hasMoreOlder, setHasMoreOlder] = useState(false);
+  const [connectionState, setConnectionState] = useState<"idle" | "connected" | "reconnecting" | "error">("idle");
   const endRef = useRef<HTMLDivElement | null>(null);
   const lastMessageCountRef = useRef(0);
 
@@ -98,14 +108,72 @@ export function ConversationThread({
   }, [conversationId]);
 
   useEffect(() => {
-    const interval = window.setInterval(() => {
-      if (!document.hidden) {
-        void fetchLatest().catch(() => {});
+    const accessToken = session?.access_token;
+    if (!accessToken) {
+      setConnectionState("idle");
+      return;
+    }
+
+    let active = true;
+    const supabase = getSupabaseBrowser();
+    let channel: RealtimeChannel | null = null;
+
+    async function subscribe() {
+      try {
+        await supabase.realtime.setAuth(accessToken);
+        if (!active) return;
+
+        channel = supabase.channel(getConversationRealtimeTopic(conversationId), {
+          config: { private: true },
+        });
+
+        channel.on(
+          "broadcast",
+          { event: CONVERSATION_MESSAGE_NEW_EVENT },
+          (payload) => {
+            const data = payload.payload as ConversationMessageBroadcastPayload;
+            if (data.conversationId !== conversationId) return;
+
+            emitConversationActivity(conversationId);
+            void fetchLatest().catch(() => {});
+          },
+        );
+
+        channel.subscribe((status) => {
+          if (!active) return;
+
+          if (status === "SUBSCRIBED") {
+            setConnectionState("connected");
+            return;
+          }
+
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            setConnectionState("reconnecting");
+            return;
+          }
+
+          if (status === "CLOSED") {
+            setConnectionState("error");
+          }
+        });
+      } catch {
+        if (active) {
+          setConnectionState("error");
+        }
       }
-    }, 4000);
-    return () => window.clearInterval(interval);
+    }
+
+    setConnectionState("reconnecting");
+    void subscribe();
+
+    return () => {
+      active = false;
+      if (channel) {
+        void supabase.removeChannel(channel);
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId, messages.length]);
+  }, [conversationId, session?.access_token]);
 
   useEffect(() => {
     if (messages.length > lastMessageCountRef.current) {
@@ -177,6 +245,7 @@ export function ConversationThread({
         ),
       );
 
+      emitConversationActivity(conversationId);
       void fetchLatest().catch(() => {});
     } catch (err) {
       setMessages((prev) => prev.filter((message) => message.id !== tempId));
@@ -215,14 +284,29 @@ export function ConversationThread({
   return (
     <div className="flex h-full flex-col">
       <div className="mb-3 flex items-center justify-between">
-        {hasMoreOlder ? (
-          <Button variant="outline" size="sm" onClick={() => void loadOlder()} disabled={loadingOlder}>
-            {loadingOlder ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Load older
+        <div className="flex items-center gap-2">
+          {hasMoreOlder ? (
+            <Button variant="outline" size="sm" onClick={() => void loadOlder()} disabled={loadingOlder}>
+              {loadingOlder ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Load older
+            </Button>
+          ) : (
+            <span className="text-xs text-muted-foreground">No older messages</span>
+          )}
+          <Button variant="ghost" size="sm" onClick={() => void fetchLatest()}>
+            <RefreshCw className="h-4 w-4" />
+            Refresh
           </Button>
-        ) : (
-          <span className="text-xs text-muted-foreground">No older messages</span>
-        )}
+        </div>
+        <Badge variant={connectionState === "connected" ? "secondary" : "muted"}>
+          {connectionState === "connected"
+            ? "Connected"
+            : connectionState === "reconnecting"
+              ? "Reconnecting"
+              : connectionState === "error"
+                ? "Disconnected"
+                : "Connecting"}
+        </Badge>
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto rounded-xl border bg-card p-4">
@@ -286,4 +370,3 @@ export function ConversationThread({
     </div>
   );
 }
-

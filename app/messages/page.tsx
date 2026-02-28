@@ -7,10 +7,9 @@ export default function MessagesIndexPage() {
   return (
     <PublicShell
       title="Messages"
-      subtitle="All your buyer/seller conversations live here. New messages are polled every 4 seconds."
+      subtitle="All your buyer/seller conversations live here. Open one to receive realtime updates."
     >
       <MessagesShell autoSelectFirst />
     </PublicShell>
   );
 }
-
