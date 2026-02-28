@@ -4,6 +4,7 @@ import type React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  BarChart3,
   ExternalLink,
   LayoutDashboard,
   ListChecks,
@@ -32,6 +33,7 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/admin/listings", label: "Listings", icon: ListChecks },
   { href: "/admin/listings/new", label: "New Listing", icon: PlusSquare },
   { href: "/admin/reports", label: "Reports", icon: ShieldAlert },

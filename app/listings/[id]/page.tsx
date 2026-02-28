@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { MessageCircle, Phone, SendHorizontal } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { PublicShell } from "@/src/components/site/public-shell";
@@ -42,6 +42,7 @@ export default function ListingDetailPage({
   const [error, setError] = useState<ClientApiError | null>(null);
   const [selectedMediaIndex, setSelectedMediaIndex] = useState(0);
   const [startingChat, setStartingChat] = useState(false);
+  const trackedViewRef = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -65,6 +66,30 @@ export default function ListingDetailPage({
       active = false;
     };
   }, [params.id]);
+
+  useEffect(() => {
+    if (sessionLoading) return;
+    if (!listing) return;
+    if (trackedViewRef.current === listing.id) return;
+    trackedViewRef.current = listing.id;
+
+    const controller = new AbortController();
+    const headers = new Headers();
+    if (session?.access_token) {
+      headers.set("Authorization", `Bearer ${session.access_token}`);
+    }
+
+    void fetch(`/api/v1/listings/${listing.id}/view`, {
+      method: "POST",
+      headers,
+      cache: "no-store",
+      signal: controller.signal,
+    }).catch(() => {
+      // View tracking is best-effort only.
+    });
+
+    return () => controller.abort();
+  }, [listing?.id, session?.access_token, sessionLoading]);
 
   const selectedMedia = listing?.media[selectedMediaIndex] ?? listing?.media[0] ?? null;
   const whatsappUrl = useMemo(() => sellerWhatsappLink(listing), [listing]);
