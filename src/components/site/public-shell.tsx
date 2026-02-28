@@ -10,6 +10,7 @@ import { Badge } from "@/src/components/ui/badge";
 import { Button, buttonVariants } from "@/src/components/ui/button";
 import { cn } from "@/src/lib/utils";
 import { useUserAuth } from "@/src/lib/auth/user-auth";
+import { NotificationBell } from "./notification-bell";
 
 export function PublicShell({
   children,
@@ -74,6 +75,7 @@ export function PublicShell({
               <Badge variant="muted">Loading session...</Badge>
             ) : session && user ? (
               <>
+                <NotificationBell />
                 <Badge variant="muted" className="max-w-[220px] truncate">
                   <User className="mr-1 h-3 w-3" />
                   {user.email}
@@ -99,14 +101,16 @@ export function PublicShell({
             )}
           </div>
 
-          <Button
-            variant="outline"
-            size="icon"
-            className="md:hidden"
-            onClick={() => setMenuOpen((open) => !open)}
-          >
-            <Menu className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-2 md:hidden">
+            {session && user ? <NotificationBell /> : null}
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setMenuOpen((open) => !open)}
+            >
+              <Menu className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
         {menuOpen ? (
@@ -165,4 +169,3 @@ export function PublicShell({
     </div>
   );
 }
-

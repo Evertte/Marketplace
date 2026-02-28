@@ -17,6 +17,7 @@ import { useEffect } from "react";
 
 import { Badge } from "@/src/components/ui/badge";
 import { Button, buttonVariants } from "@/src/components/ui/button";
+import { NotificationBell } from "@/src/components/site/notification-bell";
 import { Separator } from "@/src/components/ui/separator";
 import { Skeleton } from "@/src/components/ui/skeleton";
 import { cn } from "@/src/lib/utils";
@@ -186,6 +187,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               <p className="font-medium">Manage listings, moderation, and media</p>
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <NotificationBell />
               <Link
                 href="/"
                 className={cn(
