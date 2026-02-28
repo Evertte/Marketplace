@@ -252,7 +252,7 @@ export async function listUserConversations(
     participants: {
       some: {
         userId: actor.id,
-        archivedAt: null,
+        archivedAt: query.archived ? { not: null } : null,
       },
     },
   };
@@ -657,11 +657,28 @@ export async function purgeConversationAsAdmin(
 
   const conversation = await prisma.conversation.findUnique({
     where: { id: conversationId },
-    select: { id: true },
+    select: {
+      id: true,
+      participants: {
+        where: {
+          archivedAt: {
+            not: null,
+          },
+        },
+        take: 1,
+        select: {
+          id: true,
+        },
+      },
+    },
   });
 
   if (!conversation) {
     throw new ApiError(404, "NOT_FOUND", "Conversation not found");
+  }
+
+  if (conversation.participants.length === 0) {
+    throw new ApiError(400, "INVALID_STATE", "Conversation must be archived before purge");
   }
 
   await prisma.$transaction(async (tx) => {

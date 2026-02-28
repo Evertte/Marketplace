@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { MapPin, MessageCircle, MoreHorizontal, RefreshCw, Trash2, UserRound } from "lucide-react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -45,6 +45,7 @@ export function MessagesShell({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { session, user, sessionLoading, userLoading } = useUserAuth();
   const [items, setItems] = useState<ConversationItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,9 +55,16 @@ export function MessagesShell({
   const [loadingMore, setLoadingMore] = useState(false);
   const [archivingConversationId, setArchivingConversationId] = useState<string | null>(null);
   const [openActionConversationId, setOpenActionConversationId] = useState<string | null>(null);
+  const archivedView = searchParams.get("archived") === "1";
+
+  function buildMessagesHref(conversationId?: string, nextArchived = archivedView): string {
+    const basePath = conversationId ? `/messages/${conversationId}` : "/messages";
+    return nextArchived ? `${basePath}?archived=1` : basePath;
+  }
 
   async function loadConversations(cursor?: string, append = false) {
     const params = new URLSearchParams({ limit: "20" });
+    if (archivedView) params.set("archived", "1");
     if (cursor) params.set("cursor", cursor);
     const response = await authApiJson<ConversationsResponse>(`/api/v1/conversations?${params}`);
 
@@ -87,7 +95,7 @@ export function MessagesShell({
     return () => {
       active = false;
     };
-  }, [pathname, router, session, sessionLoading]);
+  }, [archivedView, pathname, router, session, sessionLoading]);
 
   useEffect(() => {
     if (!session?.access_token) return;
@@ -103,16 +111,16 @@ export function MessagesShell({
 
     window.addEventListener(CONVERSATION_ACTIVITY_EVENT, handleActivity);
     return () => window.removeEventListener(CONVERSATION_ACTIVITY_EVENT, handleActivity);
-  }, [selectedConversationId, session?.access_token]);
+  }, [archivedView, selectedConversationId, session?.access_token]);
 
   useEffect(() => {
     if (!autoSelectFirst) return;
     if (loading || error) return;
     if (selectedConversationId) return;
     if (items.length > 0) {
-      router.replace(`/messages/${items[0]!.conversation.id}`);
+      router.replace(buildMessagesHref(items[0]!.conversation.id));
     }
-  }, [autoSelectFirst, error, items, loading, router, selectedConversationId]);
+  }, [archivedView, autoSelectFirst, error, items, loading, router, selectedConversationId]);
 
   const selectedItem = useMemo(
     () => items.find((item) => item.conversation.id === selectedConversationId) ?? null,
@@ -124,7 +132,11 @@ export function MessagesShell({
       `/api/v1/conversations/${conversationId}/unarchive`,
       { method: "POST" },
     );
-    await loadConversations();
+    if (archivedView && selectedConversationId === conversationId) {
+      router.replace(buildMessagesHref(conversationId, false));
+      return;
+    }
+    await loadConversations(undefined, false);
   }
 
   async function archiveConversation(item: ConversationItem) {
@@ -143,7 +155,7 @@ export function MessagesShell({
       );
 
       if (selectedConversationId === item.conversation.id) {
-        router.replace("/messages");
+        router.replace(buildMessagesHref(undefined, false));
       }
 
       toast.success("Chat deleted from your inbox", {
@@ -160,6 +172,33 @@ export function MessagesShell({
       });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to delete chat");
+    } finally {
+      setArchivingConversationId(null);
+    }
+  }
+
+  async function purgeConversation(item: ConversationItem) {
+    setArchivingConversationId(item.conversation.id);
+    try {
+      await authApiJson<{ data: { conversationId: string; purged: true } }>(
+        `/api/v1/admin/conversations/${item.conversation.id}/purge`,
+        { method: "DELETE" },
+      );
+
+      setItems((prev) =>
+        prev.filter((conversation) => conversation.conversation.id !== item.conversation.id),
+      );
+      setOpenActionConversationId((current) =>
+        current === item.conversation.id ? null : current,
+      );
+
+      if (selectedConversationId === item.conversation.id) {
+        router.replace(buildMessagesHref(undefined, true));
+      }
+
+      toast.success("Chat permanently deleted");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to permanently delete chat");
     } finally {
       setArchivingConversationId(null);
     }
@@ -186,10 +225,30 @@ export function MessagesShell({
     <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
       <Card className="overflow-hidden">
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <CardTitle className="text-lg">Conversations</CardTitle>
-              <CardDescription>Manual refresh with realtime conversation updates</CardDescription>
+          <div className="flex items-start justify-between gap-2">
+            <div className="space-y-3">
+              <div>
+                <CardTitle className="text-lg">Conversations</CardTitle>
+                <CardDescription>Manual refresh with realtime conversation updates</CardDescription>
+              </div>
+              <div className="inline-flex rounded-lg border bg-muted/20 p-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={archivedView ? "ghost" : "secondary"}
+                  onClick={() => router.replace(buildMessagesHref(undefined, false))}
+                >
+                  Active
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={archivedView ? "secondary" : "ghost"}
+                  onClick={() => router.replace(buildMessagesHref(undefined, true))}
+                >
+                  Archived
+                </Button>
+              </div>
             </div>
             <Button
               variant="outline"
@@ -222,7 +281,9 @@ export function MessagesShell({
                 <MessageCircle className="mx-auto mb-2 h-5 w-5 text-muted-foreground" />
                 <p className="font-medium">No conversations yet</p>
                 <p className="text-sm text-muted-foreground">
-                  Start by messaging a seller from a listing page.
+                  {archivedView
+                    ? "Archived chats will appear here."
+                    : "Start by messaging a seller from a listing page."}
                 </p>
               </div>
             </div>
@@ -231,7 +292,7 @@ export function MessagesShell({
               <div className="max-h-[60dvh] space-y-2 overflow-y-auto pr-1">
                 {items.map((item) => {
                   const active = item.conversation.id === selectedConversationId;
-                  const href = `/messages/${item.conversation.id}`;
+                  const href = buildMessagesHref(item.conversation.id);
                   const participantLabel = getParticipantLabel(item, user?.role);
                   const actionsOpen = openActionConversationId === item.conversation.id;
                   const archiving = archivingConversationId === item.conversation.id;
@@ -311,15 +372,39 @@ export function MessagesShell({
                           </Button>
                           {actionsOpen ? (
                             <div className="absolute right-0 top-10 z-10 w-40 rounded-lg border bg-background p-1 shadow-lg">
+                              {archivedView && user?.role === "admin" ? (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  className="w-full justify-start text-destructive hover:text-destructive"
+                                  disabled={archiving}
+                                  onClick={() => void purgeConversation(item)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                  {archiving ? "Deleting..." : "Permanently delete"}
+                                </Button>
+                              ) : null}
                               <Button
                                 type="button"
                                 variant="ghost"
-                                className="w-full justify-start text-destructive hover:text-destructive"
+                                className={`w-full justify-start ${
+                                  archivedView
+                                    ? ""
+                                    : "text-destructive hover:text-destructive"
+                                }`}
                                 disabled={archiving}
-                                onClick={() => void archiveConversation(item)}
+                                onClick={() =>
+                                  archivedView
+                                    ? void restoreConversation(item.conversation.id)
+                                    : void archiveConversation(item)
+                                }
                               >
                                 <Trash2 className="h-4 w-4" />
-                                {archiving ? "Deleting..." : "Delete chat"}
+                                {archivedView
+                                  ? "Restore chat"
+                                  : archiving
+                                    ? "Deleting..."
+                                    : "Delete chat"}
                               </Button>
                             </div>
                           ) : null}
