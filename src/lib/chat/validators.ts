@@ -11,6 +11,7 @@ import {
 export type ConversationsListQuery = {
   limit: number;
   cursor?: ConversationsCursor;
+  archived: boolean;
 };
 
 export type ConversationMessagesListQuery = {
@@ -66,6 +67,18 @@ export function parseConversationsListQuery(
   });
   const cursorRaw = searchParams.get("cursor")?.trim() || undefined;
   const cursor = cursorRaw ? decodeConversationsCursor(cursorRaw) : undefined;
+  const archivedRaw = searchParams.get("archived")?.trim().toLowerCase();
+
+  let archived = false;
+  if (archivedRaw) {
+    if (archivedRaw === "true" || archivedRaw === "1") {
+      archived = true;
+    } else if (archivedRaw === "false" || archivedRaw === "0") {
+      archived = false;
+    } else {
+      throw new ApiError(400, "INVALID_INPUT", "Invalid archived filter");
+    }
+  }
 
   if (cursor) {
     if (Number.isNaN(Date.parse(cursor.createdAt))) {
@@ -78,6 +91,7 @@ export function parseConversationsListQuery(
 
   return {
     limit,
+    archived,
     ...(cursor ? { cursor } : {}),
   };
 }
@@ -110,4 +124,3 @@ export function parseCreateTextMessageInput(payload: unknown): CreateTextMessage
 
   return parsed.data;
 }
-
