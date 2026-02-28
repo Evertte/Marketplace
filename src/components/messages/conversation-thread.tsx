@@ -18,10 +18,15 @@ import { useUserAuth } from "@/src/lib/auth/user-auth";
 import {
   CONVERSATION_MESSAGE_NEW_EVENT,
   CONVERSATION_READ_UPDATED_EVENT,
+  CONVERSATION_TYPING_ACTIVITY_EVENT,
+  CONVERSATION_TYPING_EVENT,
   emitConversationActivity,
+  emitConversationTypingActivity,
   getConversationRealtimeTopic,
   type ConversationMessageBroadcastPayload,
   type ConversationReadStateBroadcastPayload,
+  type ConversationTypingActivityDetail,
+  type ConversationTypingBroadcastPayload,
 } from "@/src/lib/chat/realtime";
 import type {
   ConversationMessagesResponse,
@@ -69,6 +74,7 @@ export function ConversationThread({
   const [connectionState, setConnectionState] = useState<"idle" | "connected" | "reconnecting" | "error">("idle");
   const [myReadState, setMyReadState] = useState<ConversationReadState | null>(null);
   const [otherReadState, setOtherReadState] = useState<ConversationReadState | null>(null);
+  const [isOtherTyping, setIsOtherTyping] = useState(false);
   const [isDocumentVisible, setIsDocumentVisible] = useState(
     typeof document === "undefined" ? true : document.visibilityState === "visible",
   );
@@ -76,6 +82,10 @@ export function ConversationThread({
   const lastMessageCountRef = useRef(0);
   const readDebounceRef = useRef<number | null>(null);
   const lastRequestedReadMessageIdRef = useRef<string | null>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const typingStopTimeoutRef = useRef<number | null>(null);
+  const typingExpireTimeoutRef = useRef<number | null>(null);
+  const lastTypingSentAtRef = useRef(0);
 
   const form = useForm<MessageComposerValues>({
     resolver: zodResolver(messageComposerSchema),
@@ -128,10 +138,22 @@ export function ConversationThread({
     setError(null);
     setMyReadState(null);
     setOtherReadState(null);
+    setIsOtherTyping(false);
     lastRequestedReadMessageIdRef.current = null;
     void initialLoad();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
+
+  useEffect(() => {
+    return () => {
+      if (typingStopTimeoutRef.current) {
+        window.clearTimeout(typingStopTimeoutRef.current);
+      }
+      if (typingExpireTimeoutRef.current) {
+        window.clearTimeout(typingExpireTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     function handleVisibilityChange() {
@@ -162,6 +184,7 @@ export function ConversationThread({
         channel = supabase.channel(getConversationRealtimeTopic(conversationId), {
           config: { private: true },
         });
+        channelRef.current = channel;
 
         channel.on(
           "broadcast",
@@ -203,6 +226,38 @@ export function ConversationThread({
             }
           },
         );
+        channel.on(
+          "broadcast",
+          { event: CONVERSATION_TYPING_EVENT },
+          (payload) => {
+            const data = payload.payload as ConversationTypingBroadcastPayload;
+            if (data.conversationId !== conversationId) return;
+            if (data.userId === user?.id) return;
+
+            if (typingExpireTimeoutRef.current) {
+              window.clearTimeout(typingExpireTimeoutRef.current);
+              typingExpireTimeoutRef.current = null;
+            }
+
+            setIsOtherTyping(data.isTyping);
+            emitConversationTypingActivity({
+              conversationId,
+              userId: data.userId,
+              isTyping: data.isTyping,
+            });
+
+            if (data.isTyping) {
+              typingExpireTimeoutRef.current = window.setTimeout(() => {
+                setIsOtherTyping(false);
+                emitConversationTypingActivity({
+                  conversationId,
+                  userId: data.userId,
+                  isTyping: false,
+                });
+              }, 3000);
+            }
+          },
+        );
 
         channel.subscribe((status) => {
           if (!active) return;
@@ -233,6 +288,7 @@ export function ConversationThread({
 
     return () => {
       active = false;
+      channelRef.current = null;
       if (channel) {
         void supabase.removeChannel(channel);
       }
@@ -298,6 +354,57 @@ export function ConversationThread({
     }
   }
 
+  async function broadcastTyping(isTyping: boolean) {
+    if (!user) return;
+    const channel = channelRef.current;
+    if (!channel) return;
+
+    try {
+      await channel.send({
+        type: "broadcast",
+        event: CONVERSATION_TYPING_EVENT,
+        payload: {
+          conversationId,
+          userId: user.id,
+          isTyping,
+        } satisfies ConversationTypingBroadcastPayload,
+      });
+
+      emitConversationTypingActivity({
+        conversationId,
+        userId: user.id,
+        isTyping,
+      } satisfies ConversationTypingActivityDetail);
+    } catch {
+      // Typing is best-effort only.
+    }
+  }
+
+  function handleComposerTyping(active: boolean) {
+    if (!active) {
+      if (typingStopTimeoutRef.current) {
+        window.clearTimeout(typingStopTimeoutRef.current);
+        typingStopTimeoutRef.current = null;
+      }
+      void broadcastTyping(false);
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastTypingSentAtRef.current >= 700) {
+      lastTypingSentAtRef.current = now;
+      void broadcastTyping(true);
+    }
+
+    if (typingStopTimeoutRef.current) {
+      window.clearTimeout(typingStopTimeoutRef.current);
+    }
+    typingStopTimeoutRef.current = window.setTimeout(() => {
+      void broadcastTyping(false);
+      typingStopTimeoutRef.current = null;
+    }, 800);
+  }
+
   useEffect(() => {
     if (!isDocumentVisible) return;
     if (!latestMessage) return;
@@ -354,6 +461,7 @@ export function ConversationThread({
     setMessages((prev) => mergeMessages(prev, [optimistic]));
     form.reset({ text: "" });
     setSending(true);
+    void broadcastTyping(false);
 
     try {
       const result = await authApiJson<SendMessageResponse>(
@@ -386,6 +494,8 @@ export function ConversationThread({
       setSending(false);
     }
   }
+
+  const textField = form.register("text");
 
   if (loading) {
     return (
@@ -480,6 +590,11 @@ export function ConversationThread({
         )}
         <div ref={endRef} />
       </div>
+      {isOtherTyping ? (
+        <div className="mt-2 text-xs font-medium text-primary">
+          Typing...
+        </div>
+      ) : null}
 
       <form
         className="sticky bottom-0 mt-3 flex items-end gap-2 border-t bg-background/95 pt-3 backdrop-blur"
@@ -492,7 +607,15 @@ export function ConversationThread({
             rows={2}
             placeholder="Write a message..."
             disabled={sending}
-            {...form.register("text")}
+            {...textField}
+            onChange={(event) => {
+              textField.onChange(event);
+              handleComposerTyping(true);
+            }}
+            onBlur={(event) => {
+              textField.onBlur(event);
+              handleComposerTyping(false);
+            }}
           />
           {form.formState.errors.text ? (
             <p className="mt-1 text-xs text-destructive">{form.formState.errors.text.message}</p>

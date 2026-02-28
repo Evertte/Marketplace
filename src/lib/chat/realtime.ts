@@ -1,6 +1,8 @@
 export const CONVERSATION_MESSAGE_NEW_EVENT = "message:new";
 export const CONVERSATION_READ_UPDATED_EVENT = "read-updated";
+export const CONVERSATION_TYPING_EVENT = "typing";
 export const CONVERSATION_ACTIVITY_EVENT = "conversation:activity";
+export const CONVERSATION_TYPING_ACTIVITY_EVENT = "conversation:typing";
 export const USER_NOTIFICATION_EVENT = "notification";
 
 export type ConversationMessageBroadcastPayload = {
@@ -18,6 +20,18 @@ export type ConversationReadStateBroadcastPayload = {
 
 export type ConversationActivityDetail = {
   conversationId: string;
+};
+
+export type ConversationTypingBroadcastPayload = {
+  conversationId: string;
+  userId: string;
+  isTyping: boolean;
+};
+
+export type ConversationTypingActivityDetail = {
+  conversationId: string;
+  userId: string;
+  isTyping: boolean;
 };
 
 export type UserNotificationBroadcastPayload = {
@@ -46,6 +60,16 @@ export function emitConversationActivity(conversationId: string): void {
   window.dispatchEvent(
     new CustomEvent<ConversationActivityDetail>(CONVERSATION_ACTIVITY_EVENT, {
       detail: { conversationId },
+    }),
+  );
+}
+
+export function emitConversationTypingActivity(detail: ConversationTypingActivityDetail): void {
+  if (typeof window === "undefined") return;
+
+  window.dispatchEvent(
+    new CustomEvent<ConversationTypingActivityDetail>(CONVERSATION_TYPING_ACTIVITY_EVENT, {
+      detail,
     }),
   );
 }

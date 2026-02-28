@@ -87,7 +87,16 @@ export type ConversationsResponse = {
       updatedAt: string;
     };
     hasUnread: boolean;
+    unreadCount: number;
     lastMessagePreview: string | null;
+    lastMessageSenderId: string | null;
+    isPinned: boolean;
+    pinnedAt: string | null;
+    otherUser: {
+      id: string;
+      name: string;
+      avatarUrl: string | null;
+    };
     listing: {
       id: string;
       type: ListingType;
@@ -98,10 +107,6 @@ export type ConversationsResponse = {
       locationRegion: string;
       locationCity: string;
       coverImageUrl: string | null;
-    };
-    buyer: {
-      id: string;
-      email: string;
     };
   }>;
   page: {

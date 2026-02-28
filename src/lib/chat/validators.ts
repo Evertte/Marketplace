@@ -81,10 +81,10 @@ export function parseConversationsListQuery(
   }
 
   if (cursor) {
-    if (Number.isNaN(Date.parse(cursor.createdAt))) {
+    if (Number.isNaN(Date.parse(cursor.activityAt))) {
       throw new ApiError(400, "INVALID_INPUT", "Invalid cursor");
     }
-    if (cursor.lastMessageAt !== null && Number.isNaN(Date.parse(cursor.lastMessageAt))) {
+    if (cursor.pinnedAt !== null && Number.isNaN(Date.parse(cursor.pinnedAt))) {
       throw new ApiError(400, "INVALID_INPUT", "Invalid cursor");
     }
   }

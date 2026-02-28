@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, MapPin, MessageCircle, MoreHorizontal, RefreshCw, ShieldAlert, Trash2, UserRound } from "lucide-react";
+import type { RealtimeChannel } from "@supabase/supabase-js";
+import { ArrowLeft, MapPin, MessageCircle, MoreHorizontal, Pin, PinOff, RefreshCw, ShieldAlert, Trash2, UserRound } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type React from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/src/components/ui/badge";
@@ -14,25 +15,56 @@ import { Skeleton } from "@/src/components/ui/skeleton";
 import { ConversationReportModal } from "@/src/components/messages/conversation-report-modal";
 import { authApiJson, ClientApiError } from "@/src/lib/api/client";
 import { useUserAuth } from "@/src/lib/auth/user-auth";
-import { CONVERSATION_ACTIVITY_EVENT, type ConversationActivityDetail } from "@/src/lib/chat/realtime";
+import {
+  CONVERSATION_ACTIVITY_EVENT,
+  CONVERSATION_TYPING_ACTIVITY_EVENT,
+  USER_NOTIFICATION_EVENT,
+  getUserNotificationRealtimeTopic,
+  type ConversationActivityDetail,
+  type ConversationTypingActivityDetail,
+  type UserNotificationBroadcastPayload,
+} from "@/src/lib/chat/realtime";
 import type { ConversationsResponse } from "@/src/lib/client/types";
+import { getSupabaseBrowser } from "@/src/lib/supabase/browser";
 
 type ConversationItem = ConversationsResponse["data"][number];
 
-function formatActivity(item: ConversationItem): string {
+function formatRelativeActivity(item: ConversationItem): string {
   const stamp = item.conversation.lastMessageAt ?? item.conversation.createdAt;
-  return new Date(stamp).toLocaleString();
+  const target = new Date(stamp);
+  const now = new Date();
+  const diffMs = now.getTime() - target.getTime();
+  const minute = 60_000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+
+  if (diffMs < minute) return "Now";
+  if (diffMs < hour) return `${Math.max(1, Math.floor(diffMs / minute))}m`;
+  if (diffMs < day) return `${Math.max(1, Math.floor(diffMs / hour))}h`;
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (target.toDateString() === yesterday.toDateString()) {
+    return "Yesterday";
+  }
+
+  const year = now.getFullYear() === target.getFullYear() ? undefined : "2-digit";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "numeric",
+    day: "numeric",
+    year,
+  }).format(target);
 }
 
 function getParticipantLabel(
   item: ConversationItem,
-  role: "admin" | "user" | undefined,
 ): string {
-  if (role === "admin") {
-    return item.buyer.email;
-  }
+  return item.otherUser.name;
+}
 
-  return "Marketplace Admin";
+function formatUnreadCount(unreadCount: number): string {
+  if (unreadCount > 99) return "99+";
+  return String(unreadCount);
 }
 
 export function MessagesShell({
@@ -57,8 +89,10 @@ export function MessagesShell({
   const [archivingConversationId, setArchivingConversationId] = useState<string | null>(null);
   const [openActionConversationId, setOpenActionConversationId] = useState<string | null>(null);
   const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [typingByConversation, setTypingByConversation] = useState<Record<string, boolean>>({});
   const archivedView = searchParams.get("archived") === "1";
   const hasSelectedConversation = Boolean(selectedConversationId);
+  const typingTimeoutsRef = useRef<Map<string, number>>(new Map());
 
   function buildMessagesHref(conversationId?: string, nextArchived = archivedView): string {
     const basePath = conversationId ? `/messages/${conversationId}` : "/messages";
@@ -115,6 +149,82 @@ export function MessagesShell({
     window.addEventListener(CONVERSATION_ACTIVITY_EVENT, handleActivity);
     return () => window.removeEventListener(CONVERSATION_ACTIVITY_EVENT, handleActivity);
   }, [archivedView, selectedConversationId, session?.access_token]);
+
+  useEffect(() => {
+    function handleTyping(event: Event) {
+      const detail = (event as CustomEvent<ConversationTypingActivityDetail>).detail;
+      if (!detail?.conversationId) return;
+
+      if (detail.isTyping) {
+        setTypingByConversation((current) => ({ ...current, [detail.conversationId]: true }));
+        const existing = typingTimeoutsRef.current.get(detail.conversationId);
+        if (existing) window.clearTimeout(existing);
+        const timeout = window.setTimeout(() => {
+          setTypingByConversation((current) => {
+            const next = { ...current };
+            delete next[detail.conversationId];
+            return next;
+          });
+          typingTimeoutsRef.current.delete(detail.conversationId);
+        }, 3000);
+        typingTimeoutsRef.current.set(detail.conversationId, timeout);
+        return;
+      }
+
+      const existing = typingTimeoutsRef.current.get(detail.conversationId);
+      if (existing) window.clearTimeout(existing);
+      typingTimeoutsRef.current.delete(detail.conversationId);
+      setTypingByConversation((current) => {
+        const next = { ...current };
+        delete next[detail.conversationId];
+        return next;
+      });
+    }
+
+    window.addEventListener(CONVERSATION_TYPING_ACTIVITY_EVENT, handleTyping);
+    return () => {
+      window.removeEventListener(CONVERSATION_TYPING_ACTIVITY_EVENT, handleTyping);
+      typingTimeoutsRef.current.forEach((timeout) => window.clearTimeout(timeout));
+      typingTimeoutsRef.current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    const accessToken = session?.access_token;
+    const currentUserId = user?.id;
+    if (!accessToken || !currentUserId) return;
+    const subscribedUserId: string = currentUserId;
+
+    let active = true;
+    const supabase = getSupabaseBrowser();
+    let channel: RealtimeChannel | null = null;
+
+    async function subscribe() {
+      try {
+        await supabase.realtime.setAuth(accessToken);
+        if (!active) return;
+
+        channel = supabase.channel(getUserNotificationRealtimeTopic(subscribedUserId), {
+          config: { private: true },
+        });
+        channel.on("broadcast", { event: USER_NOTIFICATION_EVENT }, (payload) => {
+          const notification = payload.payload as UserNotificationBroadcastPayload;
+          if (notification.userId !== subscribedUserId) return;
+          if (notification.type !== "NEW_MESSAGE") return;
+          void loadConversations(undefined, false).catch(() => {});
+        });
+        channel.subscribe();
+      } catch {
+        // keep inbox usable without realtime notification fan-out
+      }
+    }
+
+    void subscribe();
+    return () => {
+      active = false;
+      if (channel) void supabase.removeChannel(channel);
+    };
+  }, [archivedView, session?.access_token, user?.id]);
 
   useEffect(() => {
     if (!autoSelectFirst) return;
@@ -207,6 +317,32 @@ export function MessagesShell({
     }
   }
 
+  async function pinConversation(item: ConversationItem) {
+    try {
+      await authApiJson<{ data: { conversationId: string; pinnedAt: string | null } }>(
+        `/api/v1/conversations/${item.conversation.id}/pin`,
+        { method: "POST" },
+      );
+      setOpenActionConversationId(null);
+      await loadConversations(undefined, false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to pin conversation");
+    }
+  }
+
+  async function unpinConversation(item: ConversationItem) {
+    try {
+      await authApiJson<{ data: { conversationId: string; pinnedAt: string | null } }>(
+        `/api/v1/conversations/${item.conversation.id}/unpin`,
+        { method: "POST" },
+      );
+      setOpenActionConversationId(null);
+      await loadConversations(undefined, false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to unpin conversation");
+    }
+  }
+
   if (sessionLoading || (session && userLoading && !user)) {
     return (
       <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
@@ -296,9 +432,12 @@ export function MessagesShell({
                 {items.map((item) => {
                   const active = item.conversation.id === selectedConversationId;
                   const href = buildMessagesHref(item.conversation.id);
-                  const participantLabel = getParticipantLabel(item, user?.role);
+                  const participantLabel = getParticipantLabel(item);
                   const actionsOpen = openActionConversationId === item.conversation.id;
                   const archiving = archivingConversationId === item.conversation.id;
+                  const previewText = typingByConversation[item.conversation.id]
+                    ? "Typing..."
+                    : item.lastMessagePreview ?? "No messages yet";
                   return (
                     <div
                       key={item.conversation.id}
@@ -324,23 +463,33 @@ export function MessagesShell({
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
+                              <div className="min-w-0 space-y-1">
                                 <div className="flex items-center gap-2">
-                                  <p className="line-clamp-1 font-medium">{item.listing.title}</p>
-                                  {item.hasUnread ? (
-                                    <span
-                                      className="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-primary"
-                                      aria-label="Unread conversation"
-                                      title="Unread conversation"
-                                    />
-                                  ) : null}
+                                  <p
+                                    className={`line-clamp-1 ${
+                                      item.hasUnread ? "font-semibold text-foreground" : "font-medium"
+                                    }`}
+                                  >
+                                    {participantLabel}
+                                  </p>
+                                  {item.isPinned ? <Pin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null}
                                 </div>
-                                <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                                <p className="line-clamp-1 text-xs text-muted-foreground">
+                                  {item.listing.title}
+                                </p>
+                                <p className="flex items-center gap-1 text-xs text-muted-foreground">
                                   <UserRound className="h-3.5 w-3.5" />
-                                  <span className="line-clamp-1">{participantLabel}</span>
+                                  <span className="line-clamp-1">
+                                    {item.listing.currency} {item.listing.price}
+                                  </span>
                                 </p>
                               </div>
-                              <Badge variant="muted">{item.listing.type}</Badge>
+                              <div className="flex shrink-0 flex-col items-end gap-2">
+                                <Badge variant="muted">{item.listing.type}</Badge>
+                                <span className="text-[11px] text-muted-foreground">
+                                  {formatRelativeActivity(item)}
+                                </span>
+                              </div>
                             </div>
                             <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
                               <MapPin className="h-3.5 w-3.5" />
@@ -348,14 +497,24 @@ export function MessagesShell({
                                 {item.listing.locationCity}, {item.listing.locationRegion}
                               </span>
                             </p>
-                            <p className="mt-2 line-clamp-1 text-sm text-muted-foreground">
-                              {item.lastMessagePreview ?? "No messages yet"}
+                            <p
+                              className={`mt-2 line-clamp-1 text-sm ${
+                                typingByConversation[item.conversation.id]
+                                  ? "text-primary"
+                                  : item.hasUnread
+                                    ? "font-medium text-foreground"
+                                    : "text-muted-foreground"
+                              }`}
+                            >
+                              {previewText}
                             </p>
                             <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-                              <span>
-                                {item.listing.currency} {item.listing.price}
-                              </span>
-                              <span>{formatActivity(item)}</span>
+                              <span>{item.listing.locationCountry}</span>
+                              {item.unreadCount > 0 ? (
+                                <span className="inline-flex min-w-6 items-center justify-center rounded-full bg-primary px-1.5 py-0.5 text-[11px] font-medium text-primary-foreground">
+                                  {formatUnreadCount(item.unreadCount)}
+                                </span>
+                              ) : null}
                             </div>
                           </div>
                         </Link>
@@ -375,6 +534,30 @@ export function MessagesShell({
                           </Button>
                           {actionsOpen ? (
                             <div className="absolute right-0 top-10 z-10 w-40 rounded-lg border bg-background p-1 shadow-lg">
+                              {!archivedView ? (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  className="w-full justify-start"
+                                  onClick={() =>
+                                    void (item.isPinned
+                                      ? unpinConversation(item)
+                                      : pinConversation(item))
+                                  }
+                                >
+                                  {item.isPinned ? (
+                                    <>
+                                      <PinOff className="mr-2 h-4 w-4" />
+                                      Unpin chat
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Pin className="mr-2 h-4 w-4" />
+                                      Pin chat
+                                    </>
+                                  )}
+                                </Button>
+                              ) : null}
                               {archivedView && user?.role === "admin" ? (
                                 <Button
                                   type="button"
@@ -474,7 +657,7 @@ export function MessagesShell({
                   <CardTitle className="line-clamp-1">{selectedItem.listing.title}</CardTitle>
                   <CardDescription className="mt-1 flex items-center gap-1">
                     <UserRound className="h-3.5 w-3.5" />
-                    <span>{getParticipantLabel(selectedItem, user?.role)}</span>
+                    <span>{getParticipantLabel(selectedItem)}</span>
                   </CardDescription>
                   <CardDescription className="mt-1">
                     {selectedItem.listing.locationCity}, {selectedItem.listing.locationRegion} •{" "}
